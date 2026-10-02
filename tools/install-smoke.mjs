@@ -17,6 +17,7 @@ const pluginData = path.join(temporary, "plugin-data");
 const env = { ...process.env, CODEX_HOME: isolatedHome, TPS_PLUS_DATA_DIR: pluginData };
 for (const key of ["OPENAI_API_KEY", "OPENAI_ACCESS_TOKEN", "CODEX_AUTH_TOKEN", "TPS_PROBE_DIR"]) delete env[key];
 const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+const baseVersion = "0.6.0";
 
 function removeTemporary(target) {
   assert.ok(path.resolve(target).startsWith(path.resolve(temporary) + path.sep));
@@ -24,18 +25,19 @@ function removeTemporary(target) {
 }
 
 function findCli() {
-  if (process.env.CODEX_CLI_JS) return path.resolve(process.env.CODEX_CLI_JS);
+  if (process.env.CODEX_CLI_EXE) return { file: path.resolve(process.env.CODEX_CLI_EXE), prefix: [] };
+  if (process.env.CODEX_CLI_JS) return { file: process.execPath, prefix: [path.resolve(process.env.CODEX_CLI_JS)] };
   for (const directory of (process.env.PATH || "").split(path.delimiter)) {
     for (const relative of ["node_modules/@openai/codex/bin/codex.js", "../lib/node_modules/@openai/codex/bin/codex.js"]) {
       const candidate = path.resolve(directory, relative);
-      if (fs.existsSync(candidate)) return candidate;
+      if (fs.existsSync(candidate)) return { file: process.execPath, prefix: [candidate] };
     }
   }
-  throw new Error("Install @openai/codex@0.153.4 globally or set CODEX_CLI_JS to its bin/codex.js");
+  throw new Error("Install a supported @openai/codex CLI, set CODEX_CLI_JS, or set CODEX_CLI_EXE");
 }
 const cli = findCli();
 function codex(...args) {
-  return execFileSync(process.execPath, [cli, ...args], {
+  return execFileSync(cli.file, [...cli.prefix, ...args], {
     cwd: temporary, env, encoding: "utf8", windowsHide: true, timeout: 120_000,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -80,6 +82,32 @@ function writeTurn(file, turnId) {
   ];
   fs.writeFileSync(file, records.map((record) => JSON.stringify({ type: "event_msg", ...record })).join("\n") + "\n");
 }
+function writeModernTurn(file, turnId, sessionId) {
+  const now = Date.now();
+  const event = (payload, at) => ({ type: "event_msg", timestamp: new Date(at).toISOString(), payload });
+  const records = [
+    event({ type: "task_started", turn_id: turnId }, now - 5000),
+    { type: "turn_context", payload: { model: "gpt-synthetic", effort: "high" } },
+    event({ type: "item_completed", turn_id: turnId, thread_id: sessionId,
+      item: { type: "Reasoning", id: "synthetic-reasoning" },
+      started_at_ms: now - 4000, completed_at_ms: now - 3500 }, now - 3500),
+    event({ type: "item_completed", turn_id: turnId, thread_id: sessionId,
+      item: { type: "AgentMessage", id: "synthetic-item", content: [] },
+      started_at_ms: now - 4000, completed_at_ms: now - 3000 }, now - 3000),
+    { type: "token_usage_record", timestamp: new Date(now - 2800).toISOString(), payload: {
+      turn_id: turnId, thread_id: sessionId, response_id: "synthetic-response",
+      usage: { output_tokens: 200, reasoning_output_tokens: 40 },
+    } },
+    event({ type: "token_count", info: { last_token_usage: { output_tokens: 200, reasoning_output_tokens: 40 },
+      total_token_usage: { output_tokens: 200 } } }, now - 2700),
+    { type: "token_usage_record", timestamp: new Date(now - 2000).toISOString(), payload: {
+      turn_id: turnId, thread_id: sessionId, response_id: "synthetic-compaction",
+      usage: { output_tokens: 300, reasoning_output_tokens: 0 },
+    } },
+    { type: "compacted", payload: { message: "synthetic summary" }, timestamp: new Date(now - 1800).toISOString() },
+  ];
+  fs.writeFileSync(file, records.map(r => JSON.stringify(r)).join("\n") + "\n");
+}
 function query(installedRoot, sessionId) {
   return JSON.parse(execFileSync(process.execPath,
     [path.join(installedRoot, "scripts", "status.mjs"), "--session-id", sessionId, "--json"],
@@ -89,10 +117,10 @@ function query(installedRoot, sessionId) {
 try {
   fs.mkdirSync(marketplace);
   fs.mkdirSync(isolatedHome);
-  const archive = execFileSync("git", ["archive", "v0.5.0", ".agents/plugins/marketplace.json", "plugins/codex-tps-plus"], { cwd: root });
+  const archive = execFileSync("git", ["archive", `v${baseVersion}`, ".agents/plugins/marketplace.json", "plugins/codex-tps-plus"], { cwd: root });
   execFileSync("tar", ["-xf", "-", "-C", marketplace], { input: archive, windowsHide: true });
   codex("plugin", "marketplace", "add", marketplace, "--json");
-  const oldRoot = install("0.5.0");
+  const oldRoot = install(baseVersion);
   const transcript = path.join(temporary, "synthetic.jsonl");
   const input = { session_id: "upgrade-smoke", turn_id: "old-turn", transcript_path: transcript };
   writeTurn(transcript, input.turn_id);
@@ -105,7 +133,7 @@ try {
   assert.equal(query(upgradedRoot, input.session_id).turns, 1, "upgrade must preserve old numeric state");
   input.turn_id = "new-turn";
   writeTurn(transcript, input.turn_id);
-  assert.match(hook(upgradedRoot, "collector", input).systemMessage, /非推理输出吞吐/);
+  assert.match(hook(upgradedRoot, "collector", input).systemMessage, /本轮 暂不可测/);
   fs.appendFileSync(transcript, JSON.stringify({ type: "event_msg", payload: {
     type: "task_complete", turn_id: input.turn_id, duration_ms: 3500, time_to_first_token_ms: 500,
   } }) + "\n");
@@ -118,16 +146,27 @@ try {
   status = query(upgradedRoot, input.session_id);
   assert.equal(status.latest.durationMs, 3500);
   assert.equal(status.latest.ttftMs, 500);
-  // A resumed session can retain the removed 0.5.0 root in its Hook environment.
+  // A resumed session can retain the removed old root in its Hook environment.
   if (fs.existsSync(oldRoot)) removeTemporary(oldRoot);
-  assert.match(hook(oldRoot, "collector", input, upgradedRoot).systemMessage, /非推理输出吞吐/);
+  assert.match(hook(oldRoot, "collector", input, upgradedRoot).systemMessage, /本轮 暂不可测/);
+
+  input.turn_id = "modern-turn";
+  writeModernTurn(transcript, input.turn_id, input.session_id);
+  assert.match(hook(upgradedRoot, "collector", input).systemMessage, /本轮 ≈199\.0 tok\/s · 近期 ≈199\.0 tok\/s（1轮） · 会话 ≈199\.0 tok\/s（1轮） · 输出 200 tok$/);
+  status = query(upgradedRoot, input.session_id);
+  assert.equal(status.latest.outputTokens, 500, "explicit and legacy mirrors must not double-count");
+  assert.equal(status.latest.responseMetrics.scopes.compaction.outputTokens, 300);
+  assert.equal(status.latest.generation.tps, 199);
+  assert.ok(fs.existsSync(path.join(upgradedRoot, "skills", "tps", "SKILL.md")), "optional query skill restored");
+  assert.equal(status.latest.context.model, "gpt-synthetic");
 
   codex("plugin", "remove", "codex-tps-plus@kdb-wind");
   const freshRoot = install(version);
   assert.deepEqual(hook(freshRoot, "collector", {}), {});
   console.log(JSON.stringify({ ok: true, codex: codex("--version").trim(), version,
-    checks: ["install-0.5.0", "upgrade-to-candidate", "preserve-status", "completion-backfill",
-      "repeated-stop", "removed-old-cache-fallback", "clean-candidate-install"],
+    checks: [`install-${baseVersion}`, "upgrade-to-candidate", "preserve-status", "completion-backfill",
+      "repeated-stop", "removed-old-cache-fallback", "explicit-response-mirrors", "compaction-scope",
+      "matched-output-speed", "clean-candidate-install"],
     modelRequests: 0 }));
 } finally {
   assert.equal(path.dirname(temporary), path.resolve(os.tmpdir()));

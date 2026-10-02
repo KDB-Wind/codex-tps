@@ -1,9 +1,9 @@
 {
   "name": "codex-tps-plus",
-  "version": "0.6.0",
+  "version": "0.7.4",
   "private": true,
   "type": "module",
-  "description": "Codex CLI non-reasoning end-to-end throughput and delayed TTFT display.",
+  "description": "Local script-only Codex generation TPS estimates with explicit unavailable timing.",
   "license": "MIT",
   "engines": {
     "node": ">=22.5.0"

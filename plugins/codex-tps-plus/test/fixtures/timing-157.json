@@ -1,0 +1,135 @@
+{
+  "description": "Redacted timing and numeric usage replay. No prompt, output body, tool arguments, credentials or original IDs.",
+  "expected": {
+    "outputTokens": 157,
+    "responses": 1,
+    "durationMs": 2941,
+    "intervalOutputTokens": 156
+  },
+  "rows": [
+    {
+      "timestamp": "2026-10-01T23:59:59.000Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "token_count",
+        "info": {
+          "last_token_usage": {
+            "output_tokens": 2152,
+            "reasoning_output_tokens": 1229
+          },
+          "total_token_usage": {
+            "output_tokens": 11688
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:00:00.000Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "task_started",
+        "turn_id": "turn"
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:00:23.505Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "item_completed",
+        "item": {
+          "type": "Reasoning",
+          "id": "item-1",
+          "summary_text": [],
+          "raw_content": []
+        },
+        "started_at_ms": 1790899223504,
+        "completed_at_ms": 1790899223504
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:00:23.515Z",
+      "type": "response_item",
+      "payload": {
+        "type": "reasoning",
+        "id": "item-1",
+        "summary": []
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:44.097Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "token_count",
+        "info": {
+          "last_token_usage": {
+            "output_tokens": 2152,
+            "reasoning_output_tokens": 1229
+          },
+          "total_token_usage": {
+            "output_tokens": 11688
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:50.087Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "item_completed",
+        "item": {
+          "type": "AgentMessage",
+          "id": "item-2"
+        },
+        "started_at_ms": 1790899307151,
+        "completed_at_ms": 1790899310087
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:50.092Z",
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "role": "assistant",
+        "id": "item-2"
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:50.135Z",
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "session",
+        "turn_id": "turn",
+        "response_id": "item-3",
+        "usage": {
+          "output_tokens": 157,
+          "reasoning_output_tokens": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:50.137Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "token_count",
+        "info": {
+          "last_token_usage": {
+            "output_tokens": 157,
+            "reasoning_output_tokens": 0
+          },
+          "total_token_usage": {
+            "output_tokens": 11845
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-10-02T00:01:50.751Z",
+      "type": "event_msg",
+      "payload": {
+        "type": "task_complete",
+        "turn_id": "turn",
+        "duration_ms": 110751
+      }
+    }
+  ]
+}

@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { analyzeResponseMetrics } from "./response-metrics.mjs";
 
-const STATUS_SCHEMA_VERSION = 6;
+const STATUS_SCHEMA_VERSION = 8;
 const SHORT_RESPONSE_TOKENS_PER_REQUEST = 128;
 const INITIAL_TAIL_BYTES = 256 * 1024;
 const MAX_TAIL_BYTES = 16 * 1024 * 1024;
@@ -67,7 +68,9 @@ export function readTail(file, byteLimit, fileSystem = fs) {
   return { text, start, sizeBytes: stat.size };
 }
 
-function scanCurrentTurn(text, currentTurnId) {
+function scanCurrentTurn(text, currentTurnId, options = {}) {
+  let owner = options.sessionId || null;
+  let lastCumulativeOutput = null;
   let activeTurnId = null;
   let startedAtMs = null;
   let foundStart = false;
@@ -100,6 +103,11 @@ function scanCurrentTurn(text, currentTurnId) {
     }
     const payload = record?.payload;
     if (!payload || typeof payload !== "object") continue;
+    if (record.type === "session_meta") owner ??= payload.id || null;
+    if (payload.thread_id && owner && payload.thread_id !== owner) continue;
+    const observedCumulative = payload.type === "token_count"
+      ? finiteNumber(payload.info?.total_token_usage?.output_tokens) : null;
+    if (activeTurnId !== currentTurnId && observedCumulative !== null) lastCumulativeOutput = observedCumulative;
     if (payload.type === "task_started" && typeof payload.turn_id === "string") {
       activeTurnId = payload.turn_id;
       if (activeTurnId === currentTurnId) {
@@ -120,6 +128,7 @@ function scanCurrentTurn(text, currentTurnId) {
         estimatedRequestCount = 0;
         unestimatedRequestCount = 0;
         seenCumulativeOutput.clear();
+        if (lastCumulativeOutput !== null) seenCumulativeOutput.add(lastCumulativeOutput);
         usageDeduplicationUnavailable = false;
       }
       continue;
@@ -129,6 +138,7 @@ function scanCurrentTurn(text, currentTurnId) {
       continue;
     }
     if (!foundStart || activeTurnId !== currentTurnId) continue;
+    if (payload.turn_id && payload.turn_id !== currentTurnId) continue;
     if (record.type === "response_item") {
       const isAssistantMessage = payload.type === "message" && payload.role === "assistant";
       const isModelActivity = isAssistantMessage || [
@@ -512,7 +522,7 @@ export function extractStopMetric(transcriptPath, currentTurnId, options = {}) {
   try {
     for (;;) {
       tail = readTail(transcriptPath, byteLimit);
-      scanned = scanCurrentTurn(tail.text, currentTurnId);
+      scanned = scanCurrentTurn(tail.text, currentTurnId, options);
       if (scanned.foundStart || tail.start === 0 || byteLimit >= maxTailBytes) break;
       byteLimit = Math.min(byteLimit * 2, maxTailBytes);
     }
@@ -530,10 +540,20 @@ export function extractStopMetric(transcriptPath, currentTurnId, options = {}) {
   if (scanned.startedAtMs === null) {
     return { available: false, reason: "turn_start_time_missing" };
   }
-  if (scanned.usageDeduplicationUnavailable) {
+  const responseMetrics = analyzeResponseMetrics(tail.text, currentTurnId, { sessionId: options.sessionId });
+  if (responseMetrics.aborted || responseMetrics.hasExplicitUsage && !responseMetrics.available) {
+    return { available: false, reason: responseMetrics.reason || "explicit_usage_unavailable" };
+  }
+  if (responseMetrics.available) {
+    scanned.outputTokens = responseMetrics.outputTokens;
+    scanned.reasoningTokens = responseMetrics.reasoningTokens;
+    scanned.nonReasoningOutputTokens = responseMetrics.reasoningTokens !== null
+      ? responseMetrics.outputTokens - responseMetrics.reasoningTokens : null;
+  }
+  if (!responseMetrics.available && scanned.usageDeduplicationUnavailable) {
     return { available: false, reason: "token_usage_deduplication_unavailable" };
   }
-  if (scanned.tokenCountEvents === 0 || scanned.outputTokens <= 0) {
+  if ((!responseMetrics.available && scanned.tokenCountEvents === 0) || scanned.outputTokens <= 0) {
     return { available: false, reason: "output_tokens_missing" };
   }
   const durationMs = nowMs - scanned.startedAtMs;
@@ -546,6 +566,15 @@ export function extractStopMetric(transcriptPath, currentTurnId, options = {}) {
   return {
     available: true,
     source: "transcript-end-to-end-with-request-interval-diagnostics",
+    usageSource: responseMetrics.usageSource,
+    responseMetrics: {
+      responses: responseMetrics.responses,
+      duplicateResponses: responseMetrics.duplicateResponses,
+      mirroredLegacy: responseMetrics.mirroredLegacy,
+      scopes: responseMetrics.scopes,
+    },
+    generation: responseMetrics.generation,
+    context: responseMetrics.context,
     outputTokens: scanned.outputTokens,
     reasoningTokens: scanned.reasoningTokens,
     nonReasoningOutputTokens,
@@ -670,6 +699,7 @@ function hasCompleteRequestMeasurement(record) {
   return (
     estimatedNonReasoningOutputTokens !== null &&
     finiteNumber(record?.estimatedOutputTokens) > 0 &&
+    finiteNumber(record?.estimatedOutputTokens) === finiteNumber(record?.outputTokens) &&
     finiteNumber(record?.estimatedRequestCount) > 0 &&
     validDurationMs(record?.requestDurationMs ?? record?.inferenceDurationMs) !== null &&
     (finiteNumber(record?.unestimatedRequestCount) ?? 0) === 0
@@ -697,7 +727,7 @@ function readStatusRecords(directory) {
     try {
       const record = JSON.parse(fs.readFileSync(entry.file, "utf8"));
       if (
-        [1, 2, 3, 4, 5, STATUS_SCHEMA_VERSION].includes(record?.schemaVersion) &&
+        [1, 2, 3, 4, 5, 6, 7, STATUS_SCHEMA_VERSION].includes(record?.schemaVersion) &&
         typeof record.turnId === "string" &&
         finiteNumber(record.outputTokens) > 0 &&
         endToEndDurationForRecord(record) !== null
@@ -747,11 +777,67 @@ export function pruneStatusFiles(directory, fileSystem = fs) {
   }
 }
 
+function generationForRecord(record) {
+  const g = record?.generation;
+  const ordinary = record?.responseMetrics?.scopes?.ordinary;
+  if (!g?.available || !g.coverageComplete ||
+    g.source !== "matched-client-output-windows" ||
+    g.measurementVersion !== 3 ||
+    !Number.isSafeInteger(g.outputTokens) || g.outputTokens < 0 || g.outputTokens > record.outputTokens ||
+    !Number.isSafeInteger(g.measuredResponses) || g.measuredResponses <= 0 ||
+    g.measuredResponses !== g.ordinaryResponses ||
+    (record.responseMetrics && (!ordinary || ordinary.outputTokens !== g.outputTokens ||
+      ordinary.responses !== g.ordinaryResponses)) ||
+    !Number.isSafeInteger(g.intervalOutputTokens) || g.intervalOutputTokens <= 0 ||
+    g.intervalOutputTokens !== g.outputTokens - g.measuredResponses ||
+    Object.keys(g.exclusionReasons || {}).length !== 0 ||
+    validDurationMs(g.durationMs) === null || g.durationMs > endToEndDurationForRecord(record)) return null;
+  return { ...g, tps: g.intervalOutputTokens / (g.durationMs / 1000) };
+}
+
+function groupedSessionMetrics(records) {
+  const groups = new Map();
+  for (const record of records) {
+    const c = record.context || {};
+    const key = JSON.stringify([c.model ?? null, c.provider ?? null, c.reasoningEffort ?? null]);
+    const group = groups.get(key) || { model: c.model ?? null, provider: c.provider ?? null,
+      reasoningEffort: c.reasoningEffort ?? null, turns: 0, outputTokens: 0,
+      durationMs: 0, generationOutputTokens: 0, generationIntervalTokens: 0, generationDurationMs: 0, generationMeasuredTurns: 0 };
+    group.turns++; group.outputTokens += record.outputTokens;
+    group.durationMs += endToEndDurationForRecord(record);
+    const g = generationForRecord(record);
+    if (g) { group.generationMeasuredTurns++; group.generationOutputTokens += g.outputTokens;
+      group.generationIntervalTokens += g.intervalOutputTokens; group.generationDurationMs += g.durationMs; }
+    groups.set(key, group);
+  }
+  return [...groups.values()].map(g => ({ ...g, totalOutputThroughput: g.outputTokens / (g.durationMs / 1000),
+    outputSpeedEstimate: g.generationDurationMs > 0 ? g.generationIntervalTokens / (g.generationDurationMs / 1000) : null }));
+}
+
+function generationComparisonMetrics(records, latest, limit = 5) {
+  const contextKey = r => JSON.stringify([r?.context?.model ?? null, r?.context?.provider ?? null, r?.context?.reasoningEffort ?? null]);
+  const matching = records.filter(r => contextKey(r) === contextKey(latest));
+  const eligible = matching.filter(r => generationForRecord(r));
+  const selected = limit === null ? eligible : eligible.slice(-limit);
+  const intervalOutputTokens = selected.reduce((n, r) => n + r.generation.intervalOutputTokens, 0);
+  const durationMs = selected.reduce((n, r) => n + r.generation.durationMs, 0);
+  return { available: selected.length > 0, context: latest?.context ?? null, sampleLimit: limit,
+    historyScope: "retained-session-records",
+    measuredTurns: selected.length, eligibleTurns: eligible.length, matchingTurns: matching.length,
+    excludedTurns: matching.length - eligible.length, intervalOutputTokens, durationMs,
+    tps: durationMs > 0 ? intervalOutputTokens / (durationMs / 1000) : null,
+    latestTurnIncluded: selected.includes(latest),
+    shortOutputTurns: selected.filter(r => r.generation.shortOutput).length,
+    firstCapturedAt: selected[0]?.capturedAt ?? null, lastCapturedAt: selected.at(-1)?.capturedAt ?? null,
+    measurementVersion: 3, isPureGenerationTps: false };
+}
+
 export function summarizeStatusRecords(records) {
   const valid = (records || []).filter(
     (record) => finiteNumber(record.outputTokens) > 0 && endToEndDurationForRecord(record) !== null
   );
   const latest = valid.at(-1) || null;
+  const latestGeneration = generationForRecord(latest);
   const latestNonReasoningOutputTokens = nonReasoningOutputForRecord(latest);
   const latestReasoningBreakdownAvailable = latestNonReasoningOutputTokens !== null;
   const latestUsesNonReasoning = latestReasoningBreakdownAvailable;
@@ -829,6 +915,10 @@ export function summarizeStatusRecords(records) {
       ? "non_reasoning_output_end_to_end_throughput"
       : "total_output_end_to_end_throughput",
     isPureGenerationTps: false,
+    displayMetric: latestGeneration ? "generation_tps_estimate" : "generation_tps_unavailable",
+    modelGroups: groupedSessionMetrics(valid),
+    recentGeneration: generationComparisonMetrics(valid, latest),
+    sessionGeneration: generationComparisonMetrics(valid, latest, null),
     requestCoverageCompleteForThroughput: latestRequestCoverageComplete,
     // Compatibility alias: an available inferred interval includes TTFT by construction.
     requestThroughputIncludesTtft: latestRequestCoverageComplete,
@@ -838,6 +928,14 @@ export function summarizeStatusRecords(records) {
     turns: valid.length,
     latest: latest
       ? {
+          context: latest.context ?? { model: null, provider: null, reasoningEffort: null },
+          usageSource: latest.usageSource ?? "legacy_token_count",
+          responseMetrics: latest.responseMetrics ?? null,
+          generation: latest.generation ? { ...latest.generation, available: Boolean(latestGeneration),
+            coverageComplete: Boolean(latestGeneration), tps: latestGeneration?.tps ?? null,
+            exclusionReasons: latest.generation.available && !latestGeneration
+              ? { ...latest.generation.exclusionReasons, invalid_saved_generation_evidence: 1 }
+              : latest.generation.exclusionReasons } : null,
           outputTokens: latest.outputTokens,
           reasoningTokens: reasoningOutputForRecord(latest),
           nonReasoningOutputTokens: latestNonReasoningOutputTokens,
@@ -951,6 +1049,10 @@ export function recordStopMetric({ dataDir, sessionId, turnId, metric, capturedA
     capturedAt: current?.capturedAt ?? new Date(safeTimestamp).toISOString(),
     turnId: turnHash,
     source: metric.source,
+    usageSource: metric.usageSource,
+    responseMetrics: metric.responseMetrics,
+    generation: metric.generation,
+    context: metric.context,
     outputTokens: metric.outputTokens,
     reasoningTokens: metric.reasoningTokens,
     nonReasoningOutputTokens: metric.nonReasoningOutputTokens,
@@ -1019,6 +1121,7 @@ export function backfillTurnCompletion({
   sessionId,
   turnId,
   completion,
+  generationMetric = null,
   timingSource = "task_complete_direct",
   capturedAt = new Date(),
 }) {
@@ -1029,6 +1132,12 @@ export function backfillTurnCompletion({
   const matching = readStatusRecords(directory).filter((record) => record.turnId === turnHash);
   const current = matching.at(-1);
   if (!current) return { updated: false, reason: "status_record_not_ready" };
+  const refreshed = generationMetric?.available && generationMetric.outputTokens === current.outputTokens ? {
+    generation: generationMetric.generation, responseMetrics: generationMetric.responseMetrics,
+  } : {};
+  const generationChanged = refreshed.generation && JSON.stringify(refreshed) !== JSON.stringify({
+    generation: current.generation, responseMetrics: current.responseMetrics,
+  });
   const nextCompletedDurationMs =
     validDurationMs(completion.completedDurationMs) ?? completedDurationForRecord(current);
   const candidateCurrentTtftMs = validTtftForRecord(current);
@@ -1042,7 +1151,7 @@ export function backfillTurnCompletion({
       : candidateCurrentTtftMs;
   if (
     finiteNumber(current.ttftMs) === nextTtftMs &&
-    completedDurationForRecord(current) === nextCompletedDurationMs
+    completedDurationForRecord(current) === nextCompletedDurationMs && !generationChanged
   ) {
     return { updated: false, reason: "already_backfilled" };
   }
@@ -1054,6 +1163,7 @@ export function backfillTurnCompletion({
   const replacement = { ...current };
   delete replacement.__entry;
   Object.assign(replacement, {
+    ...refreshed,
     schemaVersion: STATUS_SCHEMA_VERSION,
     ttftMs: nextTtftMs,
     completedDurationMs: nextCompletedDurationMs,
@@ -1133,8 +1243,55 @@ function compactDuration(durationMs) {
   return `${minutes}m${seconds}s`;
 }
 
-export function formatStatusLine(status) {
+export function generationUnavailableLabel(reasons) {
+  const labels = {
+    tool_execution_overlaps_output: "工具执行与输出重叠",
+    tool_argument_timing_unconfirmed: "工具计时未匹配",
+    unconfirmed_tool_start: "缺少工具参数生成起点",
+    reasoning_timing_missing: "推理计时缺失",
+    reasoning_usage_unknown: "推理用量未知",
+    unconfirmed_item_span: "输出计时无效",
+    output_timing_missing: "输出计时缺失",
+    unmatched_model_output: "输出与计时未匹配",
+    output_usage_pending: "输出用量尚未配齐",
+    response_scope_unknown: "响应范围未确认",
+    legacy_response_identity_missing: "响应标识缺失",
+    insufficient_output_tokens: "输出不足两个 token",
+    invalid_saved_generation_evidence: "计时证据未通过校验",
+  };
+  const keys = Object.keys(reasons || {});
+  return keys.length ? labels[keys.find(k => labels[k])] || "计时证据不完整" : null;
+}
+
+export function formatRecentGeneration(status) {
+  const g = status?.recentGeneration;
+  if (!g?.available) return "近期同设置加权：暂无有效样本";
+  const c = g.context || {};
+  return `近期同设置加权：≈${g.tps.toFixed(1)} tok/s（最近 ${g.measuredTurns} 个有效轮次；本会话同设置已排除 ${g.excludedTurns} 轮；${c.model || "模型未知"} / ${c.provider || "提供方未记录"} / ${c.reasoningEffort || "推理设置未知"}）`;
+}
+
+export function formatStatusDetails(status) {
+  const line = formatStatusLine(status);
+  if (!line) return null;
+  const g = status.latest.generation;
+  const coverage = g?.measurementVersion === 3 ? `计时覆盖：${g.measuredResponses}/${g.ordinaryResponses} 次普通响应 · 输出 token 覆盖 ${((g.measuredOutputTokenFraction ?? 0) * 100).toFixed(1)}%` : "计时覆盖：暂无新版生成计时证据";
+  return [line, coverage, formatRecentGeneration(status)].join("\n");
+}
+
+export function formatStatusLine(status, options = {}) {
   if (!status?.available || !status.latest || !status.session) return null;
+  if (!options.verbose) {
+    const g = status.latest.generation;
+    const currentAvailable = g?.available && g.coverageComplete && typeof g.tps === "number" && Number.isFinite(g.tps);
+    const reason = generationUnavailableLabel(status.latest.generation?.exclusionReasons);
+    const current = currentAvailable ? `本轮 ≈${g.tps.toFixed(1)} tok/s${g.shortOutput ? "（短输出）" : ""}` :
+      `本轮 暂不可测${reason ? `（${reason}）` : ""}`;
+    const comparison = (label, metric) => metric?.available && Number.isFinite(metric.tps) && metric.measuredTurns > 0 ?
+      `${label} ≈${metric.tps.toFixed(1)} tok/s（${metric.measuredTurns}轮）` : `${label} 暂无有效样本`;
+    return ["⚡ 生成 TPS 估计", current, comparison("近期", status.recentGeneration),
+      comparison("会话", status.sessionGeneration),
+      `输出 ${compactNumber(currentAvailable ? g.outputTokens : status.latest.outputTokens)} tok`].join(" · ");
+  }
   const ttft = status.mostRecentTtft;
   const ttftSuffix = ttft
     ? ` · ${ttft.isLatestTurn ? "TTFT" : "最近有效 TTFT"} ${compactDuration(ttft.ttftMs)}`
@@ -1183,6 +1340,7 @@ export function captureStopStatus(input, options = {}) {
   const metric = extractStopMetric(input?.transcript_path, input?.turn_id, {
     nowMs: options.nowMs,
     maxTailBytes: options.maxTailBytes,
+    sessionId: input?.session_id,
   });
   if (!metric.available) {
     return {

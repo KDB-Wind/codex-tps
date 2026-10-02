@@ -1,7 +1,7 @@
 {
   "name": "codex-tps-plus",
-  "version": "0.6.0",
-  "description": "Show non-reasoning end-to-end throughput and delayed TTFT, with an opt-in native OTel TBT reference.",
+  "version": "0.7.4",
+  "description": "Local automatic generation TPS estimates with optional query skills; hooks never call a model.",
   "author": {
     "name": "KDB-Wind",
     "url": "https://github.com/KDB-Wind"
@@ -9,22 +9,24 @@
   "homepage": "https://github.com/KDB-Wind/codex-tps-plus#readme",
   "repository": "https://github.com/KDB-Wind/codex-tps-plus",
   "license": "MIT",
-  "keywords": ["codex", "hooks", "ttft", "throughput", "observability"],
   "skills": "./skills/",
+  "keywords": [
+    "codex",
+    "hooks",
+    "ttft",
+    "throughput",
+    "observability"
+  ],
   "interface": {
     "displayName": "Codex TPS Plus",
-    "shortDescription": "Accurate end-to-end output throughput and delayed TTFT for Codex CLI.",
-    "longDescription": "Shows non-reasoning output divided by end-to-end turn duration, plus delayed turn TTFT, after Codex CLI responses. Transcript-inferred request intervals remain diagnostic only. An explicit localhost OTel experiment can add a native TBT-derived reference, but unjoinable telemetry is never labeled as current-turn TPS.",
+    "shortDescription": "Local generation TPS estimates with no model requests.",
+    "longDescription": "Runs local Stop hooks without model requests. Shows a generation TPS estimate only with complete matched evidence; unavailable timing stays unavailable. Optional tps and tps-doctor skills provide convenient queries.",
     "developerName": "KDB-Wind",
     "category": "Productivity",
     "capabilities": [
       "Analyze",
       "Monitor"
     ],
-    "defaultPrompt": [
-      "Show the latest Codex non-reasoning end-to-end throughput and session average.",
-      "Show the latest backfilled TTFT and explain its delayed timing.",
-      "Run the Codex TPS doctor."
-    ]
+    "defaultPrompt": ["Show the latest generation TPS estimate or explain why timing is unavailable."]
   }
 }

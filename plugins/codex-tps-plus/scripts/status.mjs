@@ -4,6 +4,8 @@ import path from "node:path";
 import { inspectOtelCapture } from "./otel-inspect.mjs";
 import {
   formatStatusLine,
+  formatStatusDetails,
+  formatRecentGeneration,
   nativeOtelReferenceFromInspection,
   readSessionStatus,
   resolvePluginDataDir,
@@ -36,5 +38,8 @@ if (otelCapture) {
 if (process.argv.includes("--json")) {
   process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
 } else {
-  process.stdout.write(`${formatStatusLine(status) || "暂无本会话吞吐数据；完成一轮对话后再试。"}\n`);
+  const line = process.argv.includes("--details") ? formatStatusDetails(status) :
+    process.argv.includes("--recent") && status.available ? formatRecentGeneration(status) :
+    formatStatusLine(status, { verbose: process.argv.includes("--verbose") });
+  process.stdout.write(`${line || "暂无本会话吞吐数据；完成一轮对话后再试。"}\n`);
 }

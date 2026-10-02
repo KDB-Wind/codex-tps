@@ -1,37 +1,37 @@
 ---
 name: tps
-description: Show Codex CLI non-reasoning end-to-end throughput, delayed completion timing and TTFT, weighted session values, and optional diagnostic references.
+description: Query the current Codex session's generation TPS estimate, timing coverage, token usage and optional TTFT details.
 ---
 
-Run the bundled `../../scripts/status.mjs --json`, resolving the path relative to this
-`SKILL.md`. Report the returned values directly and concisely. If no data is available, tell the
-user to complete one turn in a new Codex CLI session with the plugin Hook trusted.
+Run `../../scripts/status.mjs --json`, resolving the path relative to this SKILL.md.
+The script reads the current session from CODEX_THREAD_ID / CODEX_SESSION_ID. Report the returned
+data concisely; if no data exists, ask the user to complete a turn with the plugin Hook loaded.
 
-Lead with `latest.nonReasoningThroughput` and `session.nonReasoningThroughput`. Their numerator is
-`output_tokens - reasoning_output_tokens`; their denominator is end-to-end turn time, so call them
-non-reasoning output throughput, never pure-generation TPS. Mention that non-reasoning output can
-include generated tool-call arguments when that distinction matters.
+Only when latest.generation.available and coverageComplete are true, and measurementVersion is 3,
+lead with latest.generation.tps labeled “生成 TPS 估计”. Otherwise say “本轮生成 TPS 暂不可测”
+and explain latest.generation.exclusionReasons. Never label latest.nonReasoningThroughput,
+totalOutputThroughput or a partial response subset as generation TPS.
 
-Report `latest.durationSource` with the timing:
+The formula is sum(output_tokens - 1) / sum(matched client output-window seconds), evaluated per
+ordinary response. It excludes first-output waiting, tool execution and identified compaction;
+reasoning and non-reasoning usage must have corresponding timing evidence. Client output windows
+are estimates, not service-side per-token decoding measurements. Mention short-output noise when
+shortOutput is true. If scope or timing is unavailable, preserve that uncertainty.
 
-- `task_complete` is the delayed authoritative `task_complete.duration_ms` value.
-- `stop_wall_clock` is the provisional synchronous Stop measurement used until completion backfill.
+Report three clearly labeled results: current turn, recentGeneration, and sessionGeneration, plus
+output count. For each available historical result include TPS and measuredTurns; otherwise say no
+eligible samples. Recent is up to five eligible turns; session is all eligible saved records. Both
+require identical recorded model/provider/effort and use summed token intervals / summed generation
+time. Identify unknown settings as unknown, and do not call one sample a stable trend. If
+latestTurnIncluded is false, say the current turn is excluded. Partial and older measurement versions
+are excluded; a historical estimate never replaces unavailable current timing. Saved history is
+bounded (200 status files / 2 MiB per session), so session history is not an unlimited lifetime average.
+Use generation.measuredResponses / ordinaryResponses and measuredOutputTokenFraction for requested
+coverage details. Add TTFT, end-to-end throughput and historical groups only when requested.
+End-to-end duration includes waiting and tools; label it explicitly when reporting it. ModelGroups
+uses observed model/provider/effort; unknown settings stay unknown. Its generation estimate only
+covers eligible measured turns and must not be presented as all-request or current-turn speed.
 
-Show total output, reasoning, and non-reasoning counts without adding reasoning again. If
-`reasoningBreakdownAvailable` is false, report the explicitly labeled `totalOutputThroughput`
-fallback; do not infer or mix a non-reasoning session average from that record.
-
-TTFT comes from `task_complete.time_to_first_token_ms`. Completion duration and TTFT are validated
-and backfilled independently, so either may be available without the other. The first automatic
-line cannot contain its own TTFT; a later query can, and the next line may label it `最近有效 TTFT`.
-The session TTFT mean is arithmetic across turns with a valid TTFT, not token-weighted.
-
-Only discuss `requestThroughput` when the user asks for diagnostics. It uses non-reasoning output
-over transcript-inferred request intervals, includes TTFT, depends on unstable event ordering, and
-is not an exact request rate or generation TPS. Require `requestCoverageComplete` and identify it as
-a heuristic reference. `requestIntervalTotalOutputThroughput` is the corresponding legacy-style
-total-output comparison.
-
-For native OTel, report `confidence` exactly. `capture-aggregate` is a capture reference;
-`isolated-window-candidate` is still unattributed to the live Stop. Neither is current-turn or exact
-per-request TPS. Mention `shortOutputReference` when true.
+The automatic Hook runs local scripts and creates no extra model requests. This optional Skill
+is a user query in the existing AI conversation; do not claim that the AI reply consumes zero tokens.
+Do not send model test requests, enable OTel or run observer probes just to answer a status query.

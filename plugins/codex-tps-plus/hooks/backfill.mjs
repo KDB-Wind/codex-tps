@@ -7,6 +7,7 @@
 import {
   backfillTurnCompletion,
   createTurnCompletionReader,
+  extractStopMetric,
   resolvePluginDataDir,
 } from "../scripts/status-core.mjs";
 import { isDirectRun } from "../scripts/direct-run.mjs";
@@ -50,14 +51,21 @@ export async function waitAndBackfill(input, options = {}) {
     maxTailBytes: options.maxTailBytes,
   });
   let lastReason = "turn_not_complete";
+  let generationMetric;
   do {
     const completion = readCompletion();
     if (completion.available) {
+      // One bounded reread after completion also captures output/tool evidence
+      // flushed after the synchronous Hook. It updates saved queries only.
+      generationMetric ??= extractStopMetric(input?.transcript_path, input?.turn_id, {
+        sessionId: input?.session_id, maxTailBytes: options.maxTailBytes,
+      });
       const result = backfillTurnCompletion({
         dataDir,
         sessionId: input?.session_id,
         turnId: input?.turn_id,
         completion,
+        generationMetric,
         timingSource: "task_complete_async",
       });
       if (result.updated || result.reason === "already_backfilled") return result;

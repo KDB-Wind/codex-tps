@@ -2,7 +2,8 @@
 
 // Runtime metrics hook plus opt-in feasibility observer.
 // Stop records only hashed identifiers and numeric turn metrics, then surfaces
-// non-reasoning end-to-end throughput. TPS_PROBE_DIR separately enables the
+// generation TPS estimates or an explicit unavailable label. No model is called.
+// TPS_PROBE_DIR separately enables the
 // redacted phase-one observation files used for compatibility investigations.
 
 import fs from "node:fs";

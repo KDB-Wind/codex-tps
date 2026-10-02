@@ -2,36 +2,57 @@
 
 [![test](https://github.com/KDB-Wind/codex-tps-plus/actions/workflows/test.yml/badge.svg)](https://github.com/KDB-Wind/codex-tps-plus/actions/workflows/test.yml)
 
-为 Codex CLI 在每轮回复结束后显示“非推理输出端到端吞吐”，并延迟回填精确完成时长与
-TTFT 的本地插件。显式启用的 localhost OTel 实验还可读取 Codex 原生 TBT，并给出严格
-标注、未归轮的生成速度参考。
+为 Codex CLI 在每轮回复结束后显示本轮、近期、会话三个生成 TPS 估计。0.7.4 的自动 Hook 只运行本地固定脚本，不调用模型、不发起统计请求；保留可选 `$tps` / `$tps-doctor` 查询。计时覆盖完整时显示估计，证据不足时显示“暂不可测”；整轮吞吐与 TTFT 仅在详情中提供。
 
 ```text
-⚡ 非推理输出吞吐 16.2 tok/s · 会话 15.8 tok/s · 非推理 2.5k tok · 推理 2.7k tok · 总输出 5.2k tok · 轮耗时 2m36s · 最近有效 TTFT 6.8s
+⚡ 生成 TPS 估计 · 本轮 ≈32.8 tok/s · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
 ```
 
-> [!IMPORTANT]
-> 这里的“非推理输出吞吐”不是模型纯生成 TPS。它的分子是
-> `output_tokens - reasoning_output_tokens`，分母是包含首字等待、工具执行、排队和客户端
-> 开销的整轮端到端时长。Codex 尚未提供可稳定归轮的逐请求纯解码时长，因此插件不会把
-> 默认值冒充生成 TPS。
+计时证据不足时：
+
+```text
+⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
+```
 
 ## 它显示什么
 
-| 字段 | 计算口径 | 适合回答的问题 |
+| 指标 | 计算口径 | 使用范围 |
 |---|---|---|
-| 非推理输出吞吐 | `(output_tokens - reasoning_output_tokens) / 端到端秒数` | 每秒端到端完成多少非 reasoning output？ |
-| 会话 | 拆分完整轮次的 `Σ 非推理 output / Σ 端到端秒数` | 本会话同口径的加权平均是多少？ |
-| 非推理/推理/总输出 | 去重后的 token 拆分 | 本轮 output 的组成是什么？ |
-| 轮耗时 | 优先 `task_complete.duration_ms`，当轮未回填前用 `Stop - task_started` | 用户实际等待了多久？ |
-| TTFT | Stop 后落盘的 `task_complete.time_to_first_token_ms` | 上一轮从开始到首 token 等了多久？ |
+| 生成 TPS 估计 | 各普通响应 `(output_tokens - 1)` 之和 / 对应客户端输出窗口秒数之和 | 用量与窗口覆盖均完整时显示；包含推理及可确认计时的工具参数，排除已识别压缩，不是服务端纯解码测量 |
+| 近期生成 TPS 估计 | 同记录设置最近最多 5 个有效轮次的总 token 间隔 / 总生成窗口秒数 | 自动行标注实际有效轮数，单个样本不代表稳定趋势 |
+| 会话生成 TPS 估计 | 同记录设置的全部已保存有效轮次的总 token 间隔 / 总生成窗口秒数 | 自动行标注纳入的有效轮数，历史记录受保留上限约束 |
+| 非推理整轮吞吐 | `(output_tokens - reasoning_output_tokens) / 整轮秒数` | 仅在详情中显示，包含首字等待、工具执行与客户端开销 |
+| 总输出整轮吞吐 | `output_tokens / 整轮秒数` | 仅在详情中显示 |
+| TTFT | 完成事件的 `time_to_first_token_ms` | 后台回填后查询，默认行不附带其他轮次的 TTFT |
 
-`output_tokens` 同时包含非推理 output 与 reasoning；0.6.0 先校验
-`0 <= reasoning_output_tokens <= output_tokens` 再做一次减法。这里的“非推理”仍可能包含
-模型生成的工具调用参数，不能等同于只对最终可见正文做 tokenizer 计数。拆分缺失或越界时，
-插件不会猜测，而会明确降级为“总输出整轮吞吐”。所有吞吐平均值都按 token 与时长加权；
-拆分完整但非推理 output 为 0 的轮次按有效零速率样本参与会话分母。TTFT 均值是有有效回填
-值轮次的算术平均，缺失值不按零参与。
+默认行包含本轮、近期、会话三个明确标注的生成 TPS 估计，以及输出数。本轮不可测时保留原因；历史没有有效样本时显示“暂无有效样本”，不显示 0 或借用另一项。`scripts/status.mjs --json` 提供用量拆分、覆盖率、排除理由、整轮耗时及 TTFT。
+`status.mjs --verbose` 保留旧版详细整轮吞吐行与可选 OTel 参考。
+
+`status.mjs --details` 输出当前结果、响应/输出 token 的计时覆盖率，以及近期同记录设置加权速率；
+`--recent` 单独显示近期比较。`recentGeneration` 取本会话最近 5 个有效轮次，要求记录中的模型、
+provider、推理强度一致，按 token 间隔总数除以生成时间总数加权。未知设置明确标注未知；
+旧计时方法及不可测轮次不参与，不把历史均值替代当前轮的不可测状态。JSON 包含样本数、排除数、样本捕获时间与当前轮是否入选。
+
+`sessionGeneration` 使用相同过滤和加权规则，取全部已保存的同设置有效轮次；`sampleLimit=null`，
+`historyScope=retained-session-records`。现有保留上限为每会话 200 个状态文件 / 2 MiB，超过后裁剪旧文件，
+所以会话值按当前保留的有效记录计算。近期和会话都匹配当前轮记录的模型、provider、推理强度，切换设置后不混算。
+
+`latest.generation.available` 和 `coverageComplete` 同时为 true，且 `measurementVersion` 为 3，才展示生成 TPS 估计；工具先出现、零时长起点、缺失/冲突输出项、无法确认工具参数结束点、未知 reasoning 用量、推理/正文计时缺失、未归类响应、未覆盖的旧用量记录或未配对输出均显示不可测。
+匹配窗口覆盖一个响应中从可靠输出起点至最后生成完成的整个时间跨度，重叠输出项只计算一次，保留期间的间隔；工具执行开始后才写入的调用记录不能冒充参数生成结束点。
+短输出在默认行标注，不按固定速度阈值删除数据。单 token 没有 token 间隔，保持不可测。日志缺失时不把部分有效响应冒充整轮的完整速度。
+
+0.7.3 先收集整轮证据，再判定每个响应。模型输出项按 ID 回补迟到的计时；工具执行优先按调用 ID
+关联，外层调用与内部项 ID 不同时，使用具有相同 `call_id` 的调用/返回边界核验唯一归属。
+跨响应边界重叠、执行与输出重叠、返回身份缺失或时间冲突均保持不可测。推理用量明确为 0，
+且对应推理项没有可见摘要/正文时，空推理占位项不参与正文计时；加密内容不作 token 估计。
+完成事件落盘后，后台再读取一次有上限的日志以更新保存的生成证据；已显示的 Hook 行不会被改写。
+
+`token_usage_record.usage` 按响应 ID 去重，旧 `token_count` 镜像不重复相加，未覆盖的旧响应只补用量。相同 token 数的不同响应保持独立，冲突的显式记录使当前轮指标不可用。
+旧快照在新 turn 中重播且累计输出与上一轮末尾相同时，不作为新响应计数；缺少上一轮基线时不凭相同 token 数猜测去重。
+总用量包含已计入的所有响应；`responseMetrics.scopes` 单列普通、压缩和未归类用量。压缩关联依赖相邻完成记录，无法确认的范围保持未归类。
+
+`output_tokens` 已包含 reasoning，不再加一次。非推理输出也可能包含工具参数，不等于只对最终正文做分词。
+`modelGroups` 按本轮观察到的模型、provider、reasoning effort 分组，并以 token 与时长加权；未知设置保持独立。旧 `session` 与 `metric` 字段保留兼容，可能混合不同模型，不作为同模型速度比较。
 
 ## 工作机制
 
@@ -43,16 +64,16 @@ TTFT 的本地插件。显式启用的 localhost OTel 实验还可读取 Codex �
    替换；快照失败不会影响本轮指标。
 3. 同步处理器从 transcript 尾部读取 256 KiB；找不到当前 `task_started` 时逐步扩大，最多读取
    16 MiB，不会在正常模式下复制或保存整份会话正文。
-4. 解析当前 turn 的 `task_started`、模型输出项和 `token_count.last_token_usage`。
-5. 使用累计 `total_token_usage.output_tokens` 去除 Codex 重复广播的 token 快照。非零 usage
+4. 解析当前 turn 的显式逐响应用量、计时输出项及旧 `token_count`，并排除其他 turn/thread 的记录。
+5. 优先以响应 ID 关联显式用量；旧记录使用累计 `total_token_usage.output_tokens` 去重。未被显式记录覆盖的非零旧 usage
    缺少累计值时无法可靠区分重复广播与新请求，该轮返回 `token_usage_deduplication_unavailable`，
    不显示速率、不写入会话统计；不会仅因两个请求的 token 数相同而合并它们。
-6. 校验 reasoning 拆分并计算非推理 output；同步状态行先使用 Stop 墙钟得到当轮端到端值。
+6. 收集全部调用/返回及模型项，再统一关联计时并排除工具执行区间。校验推理/非推理 token 的计时覆盖；普通响应均有效时，按各响应 N−1 个间隔计算生成 TPS 估计，否则主行显示不可测及简短原因。Stop 墙钟只用于详情中的暂定整轮吞吐。
 7. 旧版的请求区间重建仍写入 JSON 供兼容诊断，但 transcript 没有稳定的逐请求生命周期
    契约，因此它不再进入默认状态行。
 8. 同步处理器还会检查当前 turn 之前最近一条完整的 `task_complete`；如果异步处理器未曾
    回填，就为上一轮补写完成时长和 TTFT。这让旧会话或偶发异步失败能在下一轮自动恢复。
-9. 同步处理器将哈希 ID 和数字状态原子写入 `PLUGIN_DATA`，再通过严格 JSON `systemMessage`
+9. 同步处理器将哈希 ID、数字状态和经过字符白名单校验的模型标签原子写入 `PLUGIN_DATA`，再通过严格 JSON `systemMessage`
    把指标显示为 Codex UI 事件。
 10. 后台处理器最多等待 10 秒；首次最多扫描 16 MiB 尾部，后续只读取追加的字节，文件未变化
     时跳过内容读取。支持半行写入、文件截断和替换。当前 turn 的 `task_complete` 落盘后，分别校验并回填 TTFT、
@@ -65,10 +86,9 @@ Hook 命令会先运行会话启动时的版本目录；如果插件升级已经
 `PLUGIN_DATA/runtime/dispatch.mjs` 中最近一次成功保存的快照。两处都不可用或系统找不到
 Node 时只返回 `{}`，不会用退出码 1 干扰旧会话。
 
-由于当前轮 completion timing 在同步 Stop 之后才出现，第一条状态行使用接近完成时点的
-Stop 墙钟，且不会包含自己的 TTFT。后台回填后，`$tps` 会改用精确完成时长；下一轮自动
-状态行会将最近有效值标成“最近有效 TTFT”（可能跨过缺失 timing 的轮次）。即使后台处理器没有运行，下一次同步 Stop 也会
-补偿回填上一轮。
+由于当前轮 completion timing 在同步 Stop 之后才出现，详情中的整轮吞吐先使用接近完成时点的
+Stop 墙钟；生成 TPS 使用独立客户端输出窗口且始终保留估计标记。默认行不展示 TTFT。后台回填后，本地 JSON 查询中的整轮吞吐会改用精确完成时长；
+详情中的旧有效 TTFT 保留轮次来源。即使后台处理器没有运行，下一次同步 Stop 也会补偿回填上一轮。
 
 这条链路依赖 Codex transcript 的事件顺序，而 transcript 不是承诺稳定的公开数据格式。
 格式变化、超长 turn、缺少 token 或状态目录不可写时，插件返回空 JSON，不伪造数值。
@@ -82,6 +102,9 @@ Stop 墙钟，且不会包含自己的 TTFT。后台回填后，`$tps` 会改用
   实测；0.6.0 已在 Windows、Codex CLI `0.153.4` 完成安装、doctor 与新会话显示验证，
   并通过 Windows/macOS/Linux × Node.js 22/24 的自动化测试及实际 CLI 安装/升级冒烟。
   macOS/Linux 的验证使用合成输入调用已安装的 Hook；尚未独立验证这些平台的交互式 TUI。
+- 0.7.0 候选版已在本机 Windows 通过 CLI `0.153.4`、`0.159.2`、`0.160.0` 的隔离安装/升级与合成 Hook 冒烟。
+  0.7.1 也通过上述三个 CLI 版本的本机隔离冒烟，并新增禁止网络与子进程访问的生产 Hook 回归。
+  新版跨平台 CI 已配置，尚未运行；输出速率尚未与受控流式响应对照验证误差。
 - 历史实验中 `codex exec` 没有运行项目 Hook，因此当前支持承诺以交互式会话为准。
 
 ## 安装
@@ -107,7 +130,7 @@ enabled: true
 1. 在 Codex 中打开 `/hooks`。
 2. 审核本插件的 `Stop` Hook，确认两个命令分别指向 `hooks/collector.mjs` 和
    `hooks/backfill.mjs`；后者应标记为后台运行，然后信任它们。
-3. **新开一个会话**。Codex 官方插件机制要求安装或更新后从新会话加载技能和工具；安装
+3. **新开一个会话**，加载新版 Hook 定义与查询 Skill；安装
    插件也不会自动信任它的 Hook。
 
 升级时执行：
@@ -117,35 +140,27 @@ codex plugin marketplace upgrade kdb-wind
 codex plugin add codex-tps-plus@kdb-wind
 ```
 
-升级不会热替换已经运行中的会话。请新开会话使用新版技能和 Hook 定义；已经运行或恢复的
+升级不会热替换已经运行中的会话。请新开会话加载新版 Hook 定义；已经运行或恢复的
 历史会话会继续使用最近自动保存的 Hook 快照，不需要重新配置。Codex 按 Hook 定义哈希记录
 信任，只有定义本身变化时才会要求重新审核。
 
 ## 使用
 
-正常使用不需要任何环境变量。完成一轮回复后会自动出现吞吐行；后台处理器最多等待
+正常使用不需要任何环境变量。完成一轮回复后会自动出现统计行；后台处理器最多等待
 10 秒回填完成时长与 TTFT，不会阻塞回复。
 
-在 Codex 输入：
+在 Codex 输入 `$tps` 查询当前会话统计，或 `$tps-doctor` 检查安装与不可测原因。它们是可选 AI 查询，会使用该次对话的 token；自动 Hook 不调用模型。
 
-```text
-$tps
-```
-
-查询最近一轮、延迟 TTFT 和当前会话的详细 JSON 口径；输入：
-
-```text
-$tps-doctor
-```
-
-检查 Node、Codex CLI、插件安装、Hook 配置、认证覆盖风险和可选 OTel 配置。
-
-也可以在仓库根目录执行：
+也可以直接在终端运行本地脚本；在仓库根目录执行：
 
 ```powershell
 npm test
 npm run doctor -- --json
+node plugins/codex-tps-plus/scripts/status.mjs --session-id <会话ID>
+node plugins/codex-tps-plus/scripts/status.mjs --session-id <会话ID> --json
 ```
+
+有 `CODEX_THREAD_ID` / `CODEX_SESSION_ID` 的终端可以省略会话参数。0.7.3 保留查询 Skill；自动统计与直接运行本地命令均不产生额外模型请求。详见 [本地查询说明](plugins/codex-tps-plus/docs/local-commands.md)。
 
 如果已经显式采集了本地 OTLP 数据，可以附加一个只读的、未归属到当前轮的参考：
 
@@ -153,7 +168,7 @@ npm run doctor -- --json
 node plugins/codex-tps-plus/scripts/status.mjs --otel-capture <otel-capture-directory> --json
 ```
 
-也可在启动 Codex 前设置 `TPS_PLUS_OTEL_CAPTURE_DIR`，让 `$tps` 读取该目录。此选项不会
+也可在运行查询前设置 `TPS_PLUS_OTEL_CAPTURE_DIR`，让本地状态脚本读取该目录。此选项不会
 启动接收器或修改 Codex 配置；原始 `.bin` 仍应视为敏感数据。
 
 ### 可选：原生 TBT 捕获实验
@@ -180,7 +195,7 @@ codex `
   -c 'otel.metrics_exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/metrics",protocol="binary"}}'
 ```
 
-完成一轮后，`$tps` 会附加类似：
+完成一轮后，`status.mjs --verbose` 会附加类似：
 
 ```text
 原生生成 TPS ≈55.7（TBT 推算·单轮候选·未归轮）
@@ -210,27 +225,18 @@ doctor 会分别检查 receiver 是否仍存活、logs/metrics exporter 是否�
 
 ## 输出示例与解读
 
-reasoning 拆分完整：
-
 ```text
-⚡ 非推理输出吞吐 12.0 tok/s · 会话 11.5 tok/s · 非推理 144 tok · 推理 120 tok · 总输出 264 tok · 轮耗时 12.0s · 最近有效 TTFT 3.9s
+⚡ 生成 TPS 估计 · 本轮 ≈32.8 tok/s · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
+⚡ 生成 TPS 估计 · 本轮 ≈61.6 tok/s（短输出） · 近期 ≈35.9 tok/s（5轮） · 会话 ≈34.8 tok/s（13轮） · 输出 87 tok
+⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期 暂无有效样本 · 会话 暂无有效样本 · 输出 200 tok
 ```
 
-reasoning 拆分缺失时降级：
+主行始终采用同一种生成窗口口径，不使用整轮吞吐替代缺失值。短输出标注只提示样本波动，不能视为稳定模型速度。
+JSON 的 `displayMetric` 表示当前紧凑显示选择，旧 `metric` 始终保留整轮吞吐语义。
+输出速率需要每个普通响应均有可靠匹配，不能通过整轮减去工具耗时或减去一次 TTFT 推算。
 
-```text
-⚡ 总输出整轮吞吐 40.0 tok/s · 会话总输出 35.2 tok/s · 总输出 200 tok · 推理拆分缺失 · 轮耗时 5.0s
-```
-
-默认吞吐包含 TTFT、工具、网络、排队和客户端开销，刻意回答“整轮每秒产生多少非推理
-output”，而不是服务端纯解码速度。不同提示、推理强度、缓存、工具耗时、服务负载和回复
-长度都会改变结果，不能用单个短回复比较模型档位。JSON 中的请求区间值只是 transcript
-启发式诊断；即使覆盖完整，也不代表上游提供了精确逐请求 timing。
-顶层 `requestCoverageCompleteForThroughput` 表示该诊断是否覆盖完整；旧字段
-`requestThroughputIncludesTtft` 仅作为兼容别名保留，不是对“本轮是否含 TTFT”的探测结果。
-
-如果当前最新状态已经由后台补全，`$tps` 会把同一个值标成 `TTFT`，而不是“最近有效 TTFT”。
-若后台超时、会话立即关闭或 transcript 格式变化，TTFT 会保持缺失，不会显示为零。
+不同模型、推理强度、缓存、输出长度、服务档位和工具负载都会改变结果。查询 `modelGroups` 中相同条件的样本，再比较带覆盖率的加权均值；单个短回复不能作为模型速度结论。
+未回填 TTFT 保持缺失，不显示为零。可选 OTel 的 TBT 参考只在详情出现，始终保留未归轮说明。
 
 ## 数据与隐私
 
@@ -241,7 +247,9 @@ output”，而不是服务端纯解码速度。不同提示、推理强度、�
 - Stop 墙钟、完成时长与推断请求区间时长；
 - 延迟回填的 TTFT 与 `task_complete` 完成时长；
 - 请求、token 快照和工具调用计数；
-- 捕获时间和 schema 版本。
+- 捕获时间和 schema 版本；
+- 响应范围/计时覆盖率与固定排除理由；
+- 校验过的模型/provider/推理档位标签，不保存配置文件或认证值。
 
 此外，`PLUGIN_DATA/runtime` 最多保存 5 份插件自身的生产 Hook 代码快照，用来在升级清理
 旧版本缓存后继续服务历史会话。快照不包含 transcript、prompt、回复、工具参数或原始 ID。
@@ -265,7 +273,7 @@ session/turn ID。每个会话最多保留 200 个状态文件，合计最多 2 
 2. `/hooks` 中当前 Hook 定义是否已信任；
 3. 安装或升级后是否新开了会话；
 4. `node --version` 是否满足要求；
-5. `$tps-doctor` 是否全部通过。
+5. 本地 `node scripts/doctor.mjs --json` 是否全部通过。
 
 无输出 token、找不到当前 turn、turn 超过 16 MiB 尾部上限或 transcript 暂时不可读时，
 插件也会有意不显示指标。
@@ -274,18 +282,22 @@ session/turn ID。每个会话最多保留 200 个状态文件，合计最多 2 
 
 活动会话会保留启动时的版本化 `PLUGIN_ROOT`。从本公开版开始，正常完成一次 Stop 会自动
 保存稳定运行时；后续升级即使清理旧缓存，历史会话也会转到该快照，最差返回空 JSON，
-不应再出现退出码 1。仍建议升级后新开会话，以加载新版技能和 Hook 定义。
+不应再出现退出码 1。仍建议升级后新开会话，以加载新版 Hook 定义和查询 Skill。
 
 早于这一兼容机制创建的内部开发会话无法被旧 Hook 命令追溯改写；它们需要一次性恢复旧
 路径或结束会话。这不影响首次安装本公开版的用户。
 
-### 为什么 `$tps` 一直没有 TTFT
+### 为什么查询一直没有 TTFT
 
 正常情况下，后台 Stop 处理器会在 `task_complete` 落盘后回填当前轮。若历史会话没有加载
 这个异步处理器，下一轮同步 Stop 会自动从 transcript 补偿回填上一轮，不需要重新配置。
 第一轮仍可能没有 TTFT，因为当轮的完成事件必然晚于同步 Stop。
 
 ### 为什么数值比其他 TPS 工具低
+
+0.7.4 在完整计时覆盖时提供本轮生成 TPS 估计，同时显示近期与会话加权值；若显示不可测，请在 `$tps` 或本地 JSON 查询中查看
+`latest.generation.exclusionReasons`。工具密集的轮次可能缺少可靠的参数生成计时，不能保证每轮均有生成速率。
+
 
 0.6.0 的主分子排除了 reasoning，分母包含 TTFT、工具和其他整轮等待；其他工具可能把
 reasoning 算进分子，或只使用首 token 到末 token 的纯解码时间。口径不同，数值不能直接
@@ -295,7 +307,7 @@ reasoning 算进分子，或只使用首 token 到末 token 的纯解码时间�
 ### 为什么第一轮没有 TTFT
 
 Codex 在同步 Stop 完成后才把 `task_complete.time_to_first_token_ms` 写入 transcript。插件
-不会用估算值替代它；后台回填后可用 `$tps` 查询，下一轮自动行会显示“最近有效 TTFT”。
+不会用估算值替代它；后台回填后可用本地状态脚本查询。`status.mjs --verbose` 保留“最近有效 TTFT”及来源；默认自动行只显示生成估计/不可测与输出数。
 
 ### 为什么 OTel 参考仍不叫本轮 TPS
 
@@ -322,7 +334,8 @@ node scripts/status.mjs --otel-capture <otel-capture-directory> --json
 
 仓库根目录是 marketplace，插件本体位于 `plugins/codex-tps-plus`。GitHub Actions 在
 Windows、macOS、Linux 上分别使用 Node.js 22 和 24 运行测试、候选检查和实际 CLI 安装/升级
-冒烟验证。冒烟验证固定 Codex CLI 0.153.4，使用隔离的临时 `CODEX_HOME`，不会发送模型请求。
+冒烟验证。冒烟验证覆盖 Codex CLI 0.153.4、0.159.2 和 0.160.0，使用隔离的临时 `CODEX_HOME`，
+从 0.6.0 升级并验证显式/旧镜像、压缩范围及输出窗口估计，不会发送模型请求。
 正式标签构建还运行 `npm run release:verify`，检查工作区干净且标签指向当前提交。候选检查
 不会创建或禁止标签；正式发布步骤见 [发布检查清单](RELEASE-CHECKLIST.md)。
 
@@ -342,14 +355,15 @@ request/turn ID，因此运行时不会把 `1000 / TBT_ms` 冒充当前轮 TPS�
 [第三阶段请求区间吞吐说明](plugins/codex-tps-plus/reports/phase-three.md) 和
 [第四阶段延迟 TTFT 说明](plugins/codex-tps-plus/reports/phase-four.md) 和
 [第五阶段 OTel 实验报告](plugins/codex-tps-plus/reports/phase-five.md)。0.6.0 的审计证据、
-冻结公式和兼容规则见 [准确性修订冻结说明](PLAN-0.6.0.md)。
+冻结公式和兼容规则见 [准确性修订冻结说明](PLAN-0.6.0.md)。0.7.0 的实现、验证范围与剩余限制见 [候选版验证说明](plugins/codex-tps-plus/reports/0.7.0-candidate.md)。
+0.7.1 的固定主口径与本地统计约束见 [0.7.1 验证说明](plugins/codex-tps-plus/reports/0.7.1-candidate.md)。
+Skill 恢复与跨轮快照修复见 [0.7.2 验证说明](plugins/codex-tps-plus/reports/0.7.2-candidate.md)；迟到事件修复见 [0.7.3 验证说明](plugins/codex-tps-plus/reports/0.7.3-candidate.md)；三项自动显示见 [0.7.4 验证说明](plugins/codex-tps-plus/reports/0.7.4-candidate.md)。
 
 ## Roadmap
 
 实时吞吐/TTFT/turn 级 usage 依赖 App Server 的只读会话事件流；phase-six 实验证实
 当前协议没有被动订阅者角色（审批等请求会扇出给订阅客户端），因此该方向暂缓。
-待上游提供 observer/read-only API 或可关联的 Hook/OTel 数据后恢复。0.6.0 不依赖该失败
-方向：它只把现有可证明的非推理 output 与端到端完成时长作为默认口径。
+待上游提供 observer/read-only API 或可关联的 Hook/OTel 数据后恢复。0.7.3 使用现有日志的逐响应输出窗口，在完整覆盖时显示生成 TPS 估计，其余轮次显示不可测。主行不混用整轮吞吐。
 
 ## 官方参考
 

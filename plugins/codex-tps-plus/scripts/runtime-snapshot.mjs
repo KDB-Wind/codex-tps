@@ -12,6 +12,7 @@ const RUNTIME_FILES = [
   "scripts/runtime-dispatch.mjs",
   "scripts/runtime-snapshot.mjs",
   "scripts/status-core.mjs",
+  "scripts/response-metrics.mjs",
 ];
 
 function atomicWrite(file, content) {

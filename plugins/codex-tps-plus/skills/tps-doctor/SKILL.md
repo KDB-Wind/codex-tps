@@ -1,30 +1,35 @@
 ---
 name: tps-doctor
-description: Diagnose Codex TPS Plus end-to-end throughput, delayed timing backfill, and optional native OTel probes without exposing conversation content.
+description: Diagnose Codex TPS installation, unavailable generation timing, usage coverage and delayed completion backfill.
 ---
 
-Run the bundled `../../scripts/doctor.mjs --json`, resolving the path relative to this
-`SKILL.md`, for local prerequisites. Use `../../scripts/status.mjs --json` to verify whether the
-current session has recorded throughput data.
+Run `../../scripts/doctor.mjs --json` and `../../scripts/status.mjs --json`, resolving paths relative
+to this SKILL.md. Report prerequisite failures and latest.generation.exclusionReasons, not only
+whether the numeric TPS field is null. Automatic Hook statistics use local scripts and no model requests;
+this optional AI query is ordinary conversation usage.
 
-The release configuration has one `Stop` event with two handlers: a synchronous display collector
-and an official background (`async: true`) completion-timing backfill. The current automatic line
-uses a provisional Stop wall clock. After `task_complete` appears, the background handler makes a
-valid `duration_ms` authoritative and separately records a valid TTFT. Missing TTFT must not block
-duration correction; missing duration must not turn TTFT into zero. A later synchronous Stop also
-recovers the previous turn when the background handler did not run.
+Common reasons: tool_argument_timing_unconfirmed means a tool's execution cannot be uniquely joined
+to argument output (missing/conflicting call-return identity or timing); tool_execution_overlaps_output
+means execution intersects a candidate generation window. These can be parser association failures,
+not proof that the CLI omitted timestamps. response_scope_unknown means a usage boundary has no matched output evidence;
+reasoning_timing_missing means counted reasoning lacks corresponding timing. Old generation methods
+are preserved as historical data and are not automatically converted into current TPS.
 
-For a transcript supplied by a Hook, run `node scripts/analyze-transcript.mjs <transcript.jsonl>`.
-The output is a redacted structural summary: paths, prompts, assistant text, commands, and full
-identifiers are not emitted.
+When a Hook transcript is supplied, `../../scripts/analyze-transcript.mjs <transcript.jsonl>` provides
+a redacted structural summary. Do not display prompts, tool arguments or raw identifiers. An unchanged
+legacy cumulative output snapshot from before task_started is not a new response; do not suggest
+loosening coverage rules to obtain a higher number.
 
-For a local OTLP HTTP capture, start the explicit receiver with
-`node scripts/otel.mjs serve --output-dir <capture-directory> --port <port>`, then run
-`node scripts/doctor.mjs --otel-capture <capture-directory> --json` and
-`node scripts/otel.mjs scan <capture-directory>`. An existing capture can be attached with
-`node scripts/status.mjs --otel-capture <capture-directory> --json`.
+Use doctor.timing and status.latest.generation to distinguish installation failures from measurement
+coverage. Report response coverage and output-token coverage when useful. Completion backfill rereads
+generation evidence once; saved queries can improve after the Hook, but an already printed Hook line
+does not update. recentGeneration and sessionGeneration are comparisons of eligible saved same-setting
+turns, never replacements for the current turn. The Hook labels all three speeds and measured sample
+counts; missing historical samples do not indicate a failed installation.
 
-The OTel TBT reciprocal remains an unattributed capture aggregate or isolated-window candidate
-unless a validated request/turn join key exists. Receiver exclusivity and conversation isolation
-are separate checks. Treat every captured `.bin` as raw, potentially sensitive data; delete the
-exact temporary capture directory after the experiment.
+Completion duration and TTFT backfill independently. They describe turn timing and must not be used
+to fabricate generation speed by subtracting one TTFT from full turn duration. Missing generation
+evidence stays unavailable; end-to-end throughput is a separately named diagnostic.
+
+Do not send model test requests, enable OTel or start the observer unless that experiment is requested.
+Native TBT captures lacking a validated turn/request join remain unattributed references.

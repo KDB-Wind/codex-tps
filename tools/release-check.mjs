@@ -47,6 +47,10 @@ assert.equal(manifest.license, "MIT");
 assert.equal(manifest.repository, "https://github.com/KDB-Wind/codex-tps-plus");
 assert.ok(Array.isArray(manifest.interface.defaultPrompt));
 assert.ok(manifest.interface.defaultPrompt.length <= 3);
+assert.equal(manifest.skills, "./skills/");
+for (const name of ["tps", "tps-doctor"]) {
+  assert.ok(fs.existsSync(path.join(pluginRoot, "skills", name, "SKILL.md")), `missing query skill: ${name}`);
+}
 assert.doesNotMatch(manifest.version, /\+codex\./);
 assert.match(
   changelog,

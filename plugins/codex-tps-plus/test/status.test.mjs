@@ -10,7 +10,7 @@ import {
   captureStopStatus,
   extractStopMetric,
   extractTurnCompletion,
-  formatStatusLine,
+  formatStatusLine as formatStatus,
   nativeOtelReferenceFromInspection,
   pruneStatusFiles,
   readTail,
@@ -19,6 +19,8 @@ import {
   summarizeStatusRecords,
 } from "../scripts/status-core.mjs";
 import { waitAndBackfill } from "../hooks/backfill.mjs";
+
+const formatStatusLine = status => formatStatus(status, { verbose: true });
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fixture = (name) => path.join(root, "test", "fixtures", name);
@@ -578,7 +580,8 @@ test("synchronous Stop recovers the previous turn TTFT when the async hook did n
   assert.equal(result.status.mostRecentTtft.ttftMs, 900);
   assert.equal(result.status.mostRecentTtft.timingSource, "task_complete_sync_recovery");
   assert.equal(result.status.mostRecentTtft.isLatestTurn, false);
-  assert.match(result.line, /· 最近有效 TTFT 0\.9s$/);
+  assert.doesNotMatch(result.line, /TTFT|会话 [\d≈]/);
+  assert.match(formatStatusLine(result.status), /最近有效 TTFT 0\.9s$/);
   fs.rmSync(temp, { recursive: true, force: true });
 });
 
@@ -701,7 +704,7 @@ test("an isolated OTel window remains an unattributed short-output candidate", (
   );
 });
 
-test("Stop capture makes non-reasoning end-to-end throughput the primary line", () => {
+test("Stop capture keeps end-to-end throughput in details and explains unavailable generation", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-tps-plus-capture-"));
   const result = captureStopStatus(
     {
@@ -713,14 +716,14 @@ test("Stop capture makes non-reasoning end-to-end throughput the primary line", 
   );
   assert.equal(result.status.session.throughput, 3);
   assert.equal(result.status.latest.requestThroughput, 6);
-  assert.equal(result.line, "⚡ 非推理输出吞吐 3.0 tok/s · 会话 3.0 tok/s · 非推理 6 tok · 推理 4 tok · 总输出 10 tok · 轮耗时 2.0s");
+  assert.equal(result.line, "⚡ 生成 TPS 估计 · 本轮 暂不可测（响应范围未确认） · 近期 暂无有效样本 · 会话 暂无有效样本 · 输出 10 tok");
   assert.equal(result.status.isPureGenerationTps, false);
   assert.equal(result.status.requestThroughputIncludesTtft, true);
   assert.equal(formatStatusLine(result.status).startsWith("⚡ 非推理输出吞吐 3.0"), true);
   fs.rmSync(temp, { recursive: true, force: true });
 });
 
-test("collector surfaces non-reasoning end-to-end throughput as strict Stop JSON", () => {
+test("collector surfaces unavailable generation with a reason as strict informational Stop JSON", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-tps-plus-hook-status-"));
   const collector = path.join(root, "hooks", "collector.mjs");
   const transcript = path.join(temp, "rollout.jsonl");
@@ -747,8 +750,8 @@ test("collector surfaces non-reasoning end-to-end throughput as strict Stop JSON
     encoding: "utf8",
   });
   const output = JSON.parse(stdout);
-  assert.match(output.systemMessage, /^⚡ 非推理输出吞吐 /);
-  assert.match(output.systemMessage, /· 推理 4 tok /);
+  assert.match(output.systemMessage, /^⚡ 生成 TPS 估计 · 本轮 暂不可测（响应范围未确认） /);
+  assert.doesNotMatch(output.systemMessage, /· 推理|会话 [\d≈]|TTFT/);
   assert.doesNotMatch(output.systemMessage, /请求内吞吐/);
   fs.rmSync(temp, { recursive: true, force: true });
 });

@@ -12,6 +12,7 @@ import {
 } from "./doctor-core.mjs";
 import { inspectOtelCapture } from "./otel-inspect.mjs";
 import { inspectOtelConfig } from "./otel.mjs";
+import { readSessionStatus, resolvePluginDataDir, generationUnavailableLabel } from "./status-core.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const manifestPath = path.join(root, ".codex-plugin", "plugin.json");
@@ -91,7 +92,8 @@ results.push(pluginInstallation(manifest?.version));
 results.push(
   check(
     "Plugin manifest",
-    Boolean(manifest?.name === "codex-tps-plus" && manifest?.skills === "./skills/"),
+    Boolean(manifest?.name === "codex-tps-plus" && manifest?.skills === "./skills/" &&
+      fs.existsSync(path.join(root, "skills", "tps", "SKILL.md"))),
     fs.existsSync(manifestPath) ? "present and named codex-tps-plus" : "missing or invalid"
   )
 );
@@ -212,7 +214,13 @@ if (otelCapture) {
   );
 }
 
-const report = { doctorVersion: 1, root, checks: results, failed: results.filter((item) => !item.ok).length };
+const sessionId = option("--session-id") || process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
+const status = sessionId ? readSessionStatus({ dataDir: option("--data-dir") || resolvePluginDataDir(), sessionId }) : null;
+const timing = { available: Boolean(status?.latest?.generation?.available),
+  reason: status?.available ? generationUnavailableLabel(status.latest.generation?.exclusionReasons) : "暂无当前会话统计",
+  generation: status?.latest?.generation ?? null, recentGeneration: status?.recentGeneration ?? null,
+  sessionGeneration: status?.sessionGeneration ?? null };
+const report = { doctorVersion: 2, root, checks: results, timing, failed: results.filter((item) => !item.ok).length };
 if (process.argv.includes("--json")) {
   console.log(JSON.stringify(report, null, 2));
 } else {
@@ -221,5 +229,6 @@ if (process.argv.includes("--json")) {
     if (item.hint) console.log(`  -> ${item.hint}`);
   }
   console.log(report.failed ? `${report.failed} check(s) failed` : "All checks passed");
+  console.log(`Generation timing: ${timing.available ? "available" : timing.reason || "计时证据缺失"}`);
 }
 process.exitCode = report.failed ? 1 : 0;

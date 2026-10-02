@@ -31,3 +31,20 @@ jobs:
       - name: Install pinned Codex CLI for marketplace smoke
         run: npm install --global @openai/codex@0.153.4
       - run: npm run smoke:install
+
+  cli-compatibility:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        cli: [0.159.2, 0.160.0]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --global @openai/codex@${{ matrix.cli }}
+      - run: npm run smoke:install

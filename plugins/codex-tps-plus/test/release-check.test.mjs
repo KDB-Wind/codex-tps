@@ -17,6 +17,7 @@ test("candidate and tagged-release checks enforce distinct release boundaries", 
   const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
     { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
   for (const relative of files) {
+    if (!fs.existsSync(path.join(root, relative))) continue;
     const target = path.join(temporary, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(root, relative), target);

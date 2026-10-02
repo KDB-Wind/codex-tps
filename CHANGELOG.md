@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.4 - 2026-10-03
+
+- Restore three labeled generation estimates in the automatic Hook: current turn, up to five recent eligible turns, and retained eligible session history. Show actual sample counts and keep output tokens.
+- Expose sessionGeneration alongside recentGeneration, with identical model/provider/effort and measurement-version filtering and token-interval/time weighting.
+- Preserve the current-turn unavailable reason while showing separately labeled history. Missing samples remain unavailable; older end-to-end metrics never fill generation fields.
+- Keep measurement version 3 and existing runtime, optional query skills and no-extra-model-request automatic hooks.
+- Reject non-object transcript rows, conflicting tool-return timestamps and duplicate native tool kinds; validate saved generation totals against ordinary-response coverage before including them in current, recent or session speeds.
+
+## 0.7.3 - 2026-10-02
+
+- Resolve output and tool timing after collecting the turn. Match late model items by ID and wrapper tool execution through identified call/return envelopes; reject ambiguous, conflicting or overlapping execution evidence.
+- Ignore empty reasoning shells only when authoritative reasoning usage is explicitly zero. Preserve strict complete coverage and tool-first exclusions.
+- Recheck generation evidence once after asynchronous completion, preserving original turn order and completed timing. Previously printed Hook lines are not rewritten.
+- Explain unavailable timing in the compact Hook. Add human-readable --details / --recent queries and the last five complete same-setting weighted samples in JSON.
+- Keep optional query skills and local automatic hooks with no additional model requests. Measurement version 3 keeps older evidence readable without silently mixing it into new comparisons.
+
+## 0.7.2 - 2026-10-02
+
+- Restore optional tps and tps-doctor query skills; automatic Stop hooks still run local scripts without model requests.
+- Seed legacy deduplication from the preceding turn's cumulative output snapshot, excluding unchanged rebroadcasts after task start.
+- Keep the generation-only primary display and strict timing coverage; query skills explain unavailable evidence without relabeling end-to-end throughput as TPS.
+
+## 0.7.1 - 2026-10-02
+
+- Keep the primary metric exclusively generation TPS estimates; missing timing displays unavailable rather than end-to-end throughput.
+- Use per-response inter-token counts (`output_tokens - 1`) and require matching reasoning/non-reasoning timing scopes.
+- Mark short-output estimates and reject single-token intervals. Old formula records remain readable but do not become current TPS.
+- Remove model-driven query skills and prompt suggestions; provide local status/doctor commands instead. Automatic hooks make no model requests.
+- Add a regression check that runs production hooks with networking and child-process access denied.
+
+## 0.7.0 - 2026-10-02
+
+- Prefer response-ID usage records, deduplicate legacy mirrors, retain uncovered legacy usage, and reject conflicting explicit records.
+- Separate compaction and unclassified output from ordinary generation accounting.
+- Estimate output speed only from complete matched client output windows; exclude tool execution, reject tool-first and ambiguous spans, and expose coverage/exclusion reasons.
+- Reduce automatic output to speed and output count, with explicitly labeled end-to-end fallback and no earlier-turn TTFT. Keep verbose and JSON diagnostics available.
+- Group session comparisons by observed model, provider and reasoning effort; unknown settings remain separate.
+- Retain v1-v6 status compatibility and completion backfill; include the new adapter in stable runtime snapshots.
+- Add Codex CLI 0.159.2/0.160.0 installation smoke coverage alongside 0.153.4.
+
 ## 0.6.0 - 2026-09-08
 
 - Fail closed when nonzero usage lacks cumulative deduplication evidence instead of merging

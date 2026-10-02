@@ -141,7 +141,7 @@ test("stable runtime dispatches a Stop hook after the installed version root dis
     }
   );
   assert.equal(result.status, 0, result.stderr);
-  assert.match(JSON.parse(result.stdout).systemMessage, /非推理输出吞吐.*tok\/s/);
+  assert.match(JSON.parse(result.stdout).systemMessage, /本轮 暂不可测/);
 
   fs.appendFileSync(
     transcript,

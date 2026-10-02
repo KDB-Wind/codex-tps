@@ -5,8 +5,10 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   backfillTurnCompletion, createTurnCompletionReader, extractStopMetric,
-  formatStatusLine, readSessionStatus, recordStopMetric, summarizeStatusRecords,
+  formatStatusLine as formatStatus, readSessionStatus, recordStopMetric, summarizeStatusRecords,
 } from "../scripts/status-core.mjs";
+
+const formatStatusLine = status => formatStatus(status, { verbose: true });
 
 function workspace(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "tps-accuracy-"));

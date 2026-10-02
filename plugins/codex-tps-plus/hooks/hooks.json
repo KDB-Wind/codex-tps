@@ -1,5 +1,5 @@
 {
-  "description": "Codex non-reasoning end-to-end throughput plus delayed completion timing; missing version caches fall back safely through PLUGIN_DATA.",
+  "description": "Local generation TPS estimates with complete matched timing and delayed evidence backfill; missing version caches fall back safely through PLUGIN_DATA.",
   "hooks": {
     "Stop": [
       {
