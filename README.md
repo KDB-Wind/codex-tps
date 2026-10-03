@@ -2,25 +2,29 @@
 
 # Codex TPS
 
-每轮回复结束，查看生成速度与历史对照。
+Generation speed and historical comparisons after each turn.
+
+**English** · [简体中文](README.zh-CN.md)
 
 [![CI](https://github.com/KDB-Wind/codex-tps/actions/workflows/test.yml/badge.svg)](https://github.com/KDB-Wind/codex-tps/actions/workflows/test.yml)
 
-[快速开始](#快速开始) · [速度怎么读](#速度怎么读) · [查询与诊断](#查询与诊断) · [文档](docs/README.md)
+[Quick start](#quick-start) · [Reading the speeds](#reading-the-speeds) · [Query and diagnose](#query-and-diagnose) · [Documentation](#documentation)
 
 </div>
 
-为 Codex CLI 自动显示本轮、近期和会话三个生成 TPS 估计。自动 Hook 只运行本地固定脚本，不额外请求模型；保留可选的 `$tps` / `$tps-doctor` 查询。
+Automatically display three generation TPS estimates in Codex CLI: current turn, recent turns, and session. The automatic Hook runs fixed local scripts without additional model requests. Optional `$tps` and `$tps-doctor` Skills are available for queries and diagnostics.
+
+Hook output is currently in Chinese: 本轮 = current turn, 近期 = recent, 会话 = session, 输出 = output tokens, and 暂不可测 = unavailable.
 
 ```text
 ⚡ 生成 TPS 估计 · 本轮 ≈32.8 tok/s · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
 ```
 
-示例用于说明输出格式，不代表模型速度基准。完整计时才显示本轮估计，证据不足时显示“暂不可测”及原因。
+This example illustrates the format, not a model speed benchmark. The current-turn estimate requires complete timing evidence; otherwise, it shows “unavailable” with a reason.
 
-## 快速开始
+## Quick start
 
-需要 Node.js `>= 22.5.0`，且 Hook 进程能从 `PATH` 找到 `node`；Codex 需要支持 marketplace 插件与 Stop Hook。已验证的 CLI 和平台见[支持范围](docs/troubleshooting.md#要求与验证范围)。
+Requires Node.js `>= 22.5.0`, with `node` available on the Hook process's `PATH`, and a Codex CLI that supports marketplace plugins and Stop Hooks. See the [tested CLI versions and platforms](docs/troubleshooting.md#要求与验证范围) (Chinese).
 
 ```shell
 codex plugin marketplace add KDB-Wind/codex-tps --ref main
@@ -28,37 +32,37 @@ codex plugin add codex-tps-plus@kdb-wind
 codex plugin list --json
 ```
 
-仓库名称为 `codex-tps`；为兼容已有安装，插件标识仍为 `codex-tps-plus@kdb-wind`。
+The repository is named `codex-tps`. The plugin identifier remains `codex-tps-plus@kdb-wind` for compatibility with existing installations.
 
-1. 确认 `codex-tps-plus@kdb-wind` 为 `installed`、`enabled`。
-2. 打开 `/hooks`，审核并信任 `hooks/collector.mjs` 的同步显示命令与 `hooks/backfill.mjs` 的后台回填命令。
-3. 新开会话加载 Hook 与查询 Skill。正常对话结束后即可自动显示统计。
+1. Confirm that `codex-tps-plus@kdb-wind` is `installed` and `enabled`.
+2. Open `/hooks`, review and trust the synchronous display command in `hooks/collector.mjs` and the background backfill command in `hooks/backfill.mjs`.
+3. Start a new session to load the Hooks and query Skills. Statistics appear automatically after normal conversation turns.
 
-## 速度怎么读
+## Reading the speeds
 
-| 速度 | 统计范围 |
+| Speed | Scope |
 | --- | --- |
-| 本轮 | 当前轮普通响应的完整客户端输出窗口 |
-| 近期 | 本会话最近最多 5 个同设置有效轮次 |
-| 会话 | 本会话全部已保存的同设置有效轮次 |
+| Current turn (本轮) | Complete client output windows for ordinary responses in the current turn |
+| Recent (近期) | Up to 5 latest valid turns with matching settings in this session |
+| Session (会话) | All retained valid turns with matching settings in this session |
 
-历史值匹配记录中的模型、提供方和推理强度，按总 token 间隔 / 总生成窗口时长加权；括号内是实际有效轮数。旧方法与不可测轮次不混入，未知设置保留为未知。
+Historical values match the recorded model, provider, and reasoning effort. They are weighted as total token intervals divided by total generation-window duration; parentheses show the actual number of valid turns. Older measurement methods and unavailable turns are excluded. Unknown settings remain unknown.
 
-生成估计包含推理及其他有可靠计时的输出，排除窗口前的首字等待、可识别的工具执行和压缩。客户端日志不是服务端逐 token 解码追踪，窗口内部仍可能包含停顿，因此结果始终标为估计。
+The generation estimate includes reasoning and other output with reliable timing. It excludes waiting before the first output in each window, identifiable tool execution, and compaction. Client logs are not server-side token-by-token decoding traces, and windows may still contain pauses, so results are always labeled as estimates.
 
-本轮证据不足时，历史值仍可独立显示：
+Historical values can still appear when the current turn lacks sufficient evidence:
 
 ```text
 ⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
 ```
 
-短输出会标注；单 token 输出不可测。TTFT 与整轮吞吐仅在详情中提供。完整公式、覆盖规则和字段语义见[指标说明](docs/metrics.md)。
+Short outputs are flagged; a single-token output cannot be measured. TTFT and end-to-end turn throughput are available only in the details. See the [metric guide](docs/metrics.md) (Chinese) for formulas, coverage rules, and field meanings.
 
-## 查询与诊断
+## Query and diagnose
 
-在 Codex 输入 `$tps` 查询统计，或 `$tps-doctor` 检查安装与不可测原因。Skill 的 AI 回复会使用该次对话的 token；自动 Hook 不额外请求模型。
+Enter `$tps` in Codex to query statistics, or `$tps-doctor` to check installation and reasons for unavailable timing. A Skill's AI reply uses tokens for that conversation; the automatic Hook makes no additional model requests.
 
-也可以在仓库根目录直接运行本地命令：
+You can also run local commands from the repository root:
 
 ```shell
 node plugins/codex-tps-plus/scripts/status.mjs --session-id <session-id> --details
@@ -66,32 +70,32 @@ node plugins/codex-tps-plus/scripts/status.mjs --session-id <session-id> --json
 npm run doctor -- --json
 ```
 
-有 `CODEX_THREAD_ID` / `CODEX_SESSION_ID` 的终端可省略会话参数。参数详情见[本地查询说明](plugins/codex-tps-plus/docs/local-commands.md)。
+The session argument can be omitted in a terminal with `CODEX_THREAD_ID` or `CODEX_SESSION_ID`. See [local command options](plugins/codex-tps-plus/docs/local-commands.md) (Chinese).
 
-- **没有显示**：检查插件启用、Hook 信任、新会话和 Node，运行 doctor；步骤见[排障说明](docs/troubleshooting.md#没有显示指标)。
-- **显示不可测**：查看 JSON 的 `latest.generation.exclusionReasons`；安装通过不代表计时覆盖完整。
-- **三项速度相同**：单个有效样本，或近期恰好覆盖全部有效历史时，这是正常结果。
+- **No output:** Check plugin enablement, Hook trust, a new session, and Node.js, then run the doctor. See [troubleshooting](docs/troubleshooting.md#没有显示指标) (Chinese).
+- **Unavailable speed:** Inspect `latest.generation.exclusionReasons` in JSON. A successful installation does not guarantee complete timing coverage.
+- **All three speeds are identical:** This is expected with one valid sample, or when the recent window covers all valid history.
 
-## 升级
+## Upgrade
 
 ```shell
 codex plugin marketplace upgrade kdb-wind
 codex plugin add codex-tps-plus@kdb-wind
 ```
 
-新开会话加载新版 Hook 定义和 Skill。已有会话可使用自动保存的稳定 Hook 快照；Hook 定义变化后需要重新审核。
+Start a new session to load the updated Hook definitions and Skills. Existing sessions can use automatically saved stable Hook snapshots. Changed Hook definitions require another trust review.
 
-## 数据与隐私
+## Data and privacy
 
-正常统计仅保存哈希化标识、数字指标、计时覆盖与固定排除原因，以及经过校验的模型标签，不保存 prompt、回复正文、工具参数或原始 ID。统计链路不向网络发送会话数据。
+Normal statistics store only hashed identifiers, numeric metrics, timing coverage, fixed exclusion reasons, and validated model labels. They do not store prompts, response text, tool arguments, or raw IDs. The statistics pipeline does not send session data over the network.
 
-每会话最多保留 200 个状态文件、合计 2 MiB；会话速度按保留记录计算。另保留最多 5 个生产 Hook 代码快照供升级恢复。存储与处理链路见[工作机制](docs/architecture.md)。
+Each session retains at most 200 state files totaling 2 MiB; session speed is calculated from the retained records. Up to 5 production Hook code snapshots are also retained for upgrade recovery. See [architecture and storage](docs/architecture.md) (Chinese).
 
-## 开发与验证
+## Development and validation
 
-0.7.4 通过 141 项本机测试；[对应提交的 CI](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180) 的 12 个任务全部通过，覆盖 Windows/macOS/Linux × Node.js 22/24，以及 CLI 0.153.4、0.159.2、0.160.0 的安装/升级。
+Version 0.7.4 passed 141 local tests. All 12 jobs in the [CI run for the corresponding commit](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180) passed, covering Windows/macOS/Linux × Node.js 22/24 and installation/upgrade checks with CLI 0.153.4, 0.159.2, and 0.160.0.
 
-安装冒烟使用合成 Hook 输入，不发送模型请求；这不等于三个平台的交互界面均已实测，也不是 TPS 精度基准。
+Installation smoke checks use synthetic Hook input without model requests. These checks do not establish interactive UI testing on all three platforms or benchmark TPS accuracy.
 
 ```shell
 npm test
@@ -99,13 +103,15 @@ npm run release:check
 npm run smoke:install
 ```
 
-## 文档
+## Documentation
 
-- [指标口径与结果解读](docs/metrics.md)
-- [工作机制与数据存储](docs/architecture.md)
-- [安装、支持范围与排障](docs/troubleshooting.md)
-- [高级实验与历史证据](docs/experiments.md)
-- [文档与版本证据索引](docs/README.md) · [更新记录](CHANGELOG.md) · [发布检查](RELEASE-CHECKLIST.md)
+Detailed guides are currently available in Chinese:
+
+- [Metrics and interpretation](docs/metrics.md)
+- [Architecture and data storage](docs/architecture.md)
+- [Installation, support, and troubleshooting](docs/troubleshooting.md)
+- [Advanced experiments and historical evidence](docs/experiments.md)
+- [Documentation and version evidence](docs/README.md) · [Changelog](CHANGELOG.md) · [Release checks](RELEASE-CHECKLIST.md)
 
 ## License
 

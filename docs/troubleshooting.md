@@ -1,8 +1,8 @@
 # 安装、支持范围与排障
 
-[返回项目首页](../README.md) · [文档索引](README.md)
+[返回中文首页](../README.zh-CN.md) · [文档索引](README.md)
 
-安装与升级命令见[项目首页](../README.md#快速开始)，查询参数见[本地查询说明](../plugins/codex-tps-plus/docs/local-commands.md)。
+安装与升级命令见[项目首页](../README.zh-CN.md#快速开始)，查询参数见[本地查询说明](../plugins/codex-tps-plus/docs/local-commands.md)。
 
 ## 要求与验证范围
 

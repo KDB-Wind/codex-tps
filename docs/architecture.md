@@ -1,6 +1,6 @@
 # 工作机制与数据存储
 
-[返回项目首页](../README.md) · [文档索引](README.md)
+[返回中文首页](../README.zh-CN.md) · [文档索引](README.md)
 
 ## Stop 处理链路
 

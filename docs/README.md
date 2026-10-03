@@ -1,6 +1,6 @@
 # Codex TPS 文档
 
-[返回项目首页](../README.md)
+[返回中文首页](../README.zh-CN.md) · [English](../README.md)
 
 | 想了解什么 | 文档 |
 | --- | --- |

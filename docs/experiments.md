@@ -1,6 +1,6 @@
 # 高级实验与历史证据
 
-[返回项目首页](../README.md) · [文档索引](README.md)
+[返回中文首页](../README.zh-CN.md) · [文档索引](README.md)
 
 本文适合显式选择采集原生 timing 或研究协议的开发者。正常使用只需 Stop Hook；以下接收器、探针与 observer 均不会自动启用。
 
