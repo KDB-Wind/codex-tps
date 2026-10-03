@@ -409,12 +409,23 @@ test("completion backfill refreshes late tool evidence once and preserves origin
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "tps-late-evidence-"));
   t.after(() => { assert.equal(path.dirname(directory), path.resolve(os.tmpdir())); fs.rmSync(directory, { recursive: true, force: true }); });
   const transcript = path.join(directory, "synthetic.jsonl");
+  // Backfill reads the real clock. Keep this synthetic completed turn recent
+  // instead of letting a fixed calendar date exceed the production 24h bound.
+  const offset = Date.now() - BASE - 15000;
+  const liveText = rows => text(rows.map(record => {
+    const shifted = structuredClone(record);
+    shifted.timestamp = new Date(Date.parse(record.timestamp) + offset).toISOString();
+    for (const key of ["started_at_ms", "completed_at_ms"]) {
+      if (Number.isSafeInteger(shifted.payload[key])) shifted.payload[key] += offset;
+    }
+    return shifted;
+  }));
   const initial = [start(), item("r", 1000, 2000, "Reasoning"), call(), used("a", 400, 100, 3050)];
-  fs.writeFileSync(transcript, text(initial));
-  const metric = extractStopMetric(transcript, "turn", { nowMs: BASE + 5000, sessionId: "session" });
+  fs.writeFileSync(transcript, liveText(initial));
+  const metric = extractStopMetric(transcript, "turn", { nowMs: BASE + offset + 5000, sessionId: "session" });
   const before = recordStopMetric({ dataDir: directory, sessionId: "session", turnId: "turn", metric, capturedAt: new Date(BASE + 5000) });
   assert.equal(before.latest.generation.available, false);
-  fs.appendFileSync(transcript, text([execution(), returned(), event({ type: "task_complete", turn_id: "turn", duration_ms: 10000 }, 10000)]));
+  fs.appendFileSync(transcript, liveText([execution(), returned(), event({ type: "task_complete", turn_id: "turn", duration_ms: 10000 }, 10000)]));
   const input = { transcript_path: transcript, turn_id: "turn", session_id: "session" };
   const result = await waitAndBackfill(input, { dataDir: directory, maxWaitMs: 30, pollMs: 5 });
   assert.equal(result.updated, true);
