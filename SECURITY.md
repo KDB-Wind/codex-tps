@@ -8,7 +8,7 @@ Security fixes are provided for the latest published release.
 
 Please use GitHub private vulnerability reporting:
 
-https://github.com/KDB-Wind/codex-tps-plus/security/advisories/new
+https://github.com/KDB-Wind/codex-tps/security/advisories/new
 
 Do not attach raw Codex transcripts or OTLP capture bodies. Describe the issue with the smallest
 redacted reproduction possible. Session IDs, turn IDs, prompts, assistant text, tool arguments,

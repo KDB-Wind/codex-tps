@@ -1,10 +1,10 @@
 <div align="center">
 
-# Codex TPS Plus
+# Codex TPS
 
 每轮回复结束，查看生成速度与历史对照。
 
-[![CI](https://github.com/KDB-Wind/codex-tps-plus/actions/workflows/test.yml/badge.svg)](https://github.com/KDB-Wind/codex-tps-plus/actions/workflows/test.yml)
+[![CI](https://github.com/KDB-Wind/codex-tps/actions/workflows/test.yml/badge.svg)](https://github.com/KDB-Wind/codex-tps/actions/workflows/test.yml)
 
 [快速开始](#快速开始) · [速度怎么读](#速度怎么读) · [查询与诊断](#查询与诊断) · [文档](docs/README.md)
 
@@ -23,10 +23,12 @@
 需要 Node.js `>= 22.5.0`，且 Hook 进程能从 `PATH` 找到 `node`；Codex 需要支持 marketplace 插件与 Stop Hook。已验证的 CLI 和平台见[支持范围](docs/troubleshooting.md#要求与验证范围)。
 
 ```shell
-codex plugin marketplace add KDB-Wind/codex-tps-plus --ref main
+codex plugin marketplace add KDB-Wind/codex-tps --ref main
 codex plugin add codex-tps-plus@kdb-wind
 codex plugin list --json
 ```
+
+仓库名称为 `codex-tps`；为兼容已有安装，插件标识仍为 `codex-tps-plus@kdb-wind`。
 
 1. 确认 `codex-tps-plus@kdb-wind` 为 `installed`、`enabled`。
 2. 打开 `/hooks`，审核并信任 `hooks/collector.mjs` 的同步显示命令与 `hooks/backfill.mjs` 的后台回填命令。
@@ -87,7 +89,7 @@ codex plugin add codex-tps-plus@kdb-wind
 
 ## 开发与验证
 
-0.7.4 通过 141 项本机测试；[对应提交的 CI](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/37050730180) 的 12 个任务全部通过，覆盖 Windows/macOS/Linux × Node.js 22/24，以及 CLI 0.153.4、0.159.2、0.160.0 的安装/升级。
+0.7.4 通过 141 项本机测试；[对应提交的 CI](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180) 的 12 个任务全部通过，覆盖 Windows/macOS/Linux × Node.js 22/24，以及 CLI 0.153.4、0.159.2、0.160.0 的安装/升级。
 
 安装冒烟使用合成 Hook 输入，不发送模型请求；这不等于三个平台的交互界面均已实测，也不是 TPS 精度基准。
 

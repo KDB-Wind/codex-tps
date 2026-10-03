@@ -1,4 +1,4 @@
-# Codex TPS Plus 文档
+# Codex TPS 文档
 
 [返回项目首页](../README.md)
 

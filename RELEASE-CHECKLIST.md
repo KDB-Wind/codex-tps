@@ -6,7 +6,7 @@
 - Local validation passes 141 tests and the candidate structure check. CLI `0.153.4`,
   `0.159.2`, and `0.160.0` each pass isolated installation/upgrade smoke without model requests.
 - Commit `8fe7de8` passes all 12 Windows/macOS/Linux CI jobs
-  ([run 37050730180](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/37050730180)).
+  ([run 37050730180](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180)).
   Later commits must pass their own CI before their changes are described as validated.
 - This record covers the main-branch candidate. It does not establish a `v0.7.4` tag or
   published GitHub Release.
@@ -36,7 +36,7 @@
 - [x] Automated installation smoke uses a disposable CODEX_HOME, real Codex CLI 0.153.4, and synthetic Hook inputs.
 - [x] Local Windows install, 0.5.0 upgrade, completion backfill, repeated Stop, and removed-cache recovery pass.
 - [x] Candidate `cb294b6` passes the Windows/macOS/Linux matrix on Node.js 22 and 24
-      ([run 34089731796](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/34089731796));
+      ([run 34089731796](https://github.com/KDB-Wind/codex-tps/actions/runs/34089731796));
       rerun this gate for any later code changes.
 - [x] The fixed production files are installed locally with a distinct cachebuster, content checked,
       and the stable runtime is activated; doctor reports zero failed checks.
@@ -115,10 +115,10 @@ display uses the 0.7.4 contract above; these historical end-to-end formulas do n
 ## Published v0.5.0 evidence (historical)
 
 - The reviewed `v0.5.0` tag points to `bea3497e5022eb018ee63fa338cd7e7b3ec8ede6`.
-- The [tag matrix](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/33458712669) and
-  [initial main matrix](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/33458712814) passed
+- The [tag matrix](https://github.com/KDB-Wind/codex-tps/actions/runs/33458712669) and
+  [initial main matrix](https://github.com/KDB-Wind/codex-tps/actions/runs/33458712814) passed
   on Windows, macOS, and Linux with Node.js 22 and 24.
-- The [v0.5.0 GitHub Release](https://github.com/KDB-Wind/codex-tps-plus/releases/tag/v0.5.0)
+- The [v0.5.0 GitHub Release](https://github.com/KDB-Wind/codex-tps/releases/tag/v0.5.0)
   is public and is neither a draft nor a prerelease.
 - A clean public-marketplace smoke test installed version 0.5.0, reported it enabled, validated
   the installed plugin structure, and returned strict `{}` JSON from the installed Stop collector.

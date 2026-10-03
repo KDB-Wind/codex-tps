@@ -8,7 +8,7 @@
 
 - Node.js `>= 22.5.0`，且 `node` 能从 Hook 进程的 `PATH` 找到。
 - Codex 需要支持 marketplace 插件与 Stop Hook；支持本地 Codex 插件 Hook 的桌面界面也可使用相同链路。
-- 0.7.4 的跨平台 CI 覆盖 Windows、macOS、Linux × Node.js 22/24，以及 CLI `0.153.4`、`0.159.2`、`0.160.0` 的隔离安装/升级。[对应提交的 12 个 CI 任务](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/37050730180)全部通过。
+- 0.7.4 的跨平台 CI 覆盖 Windows、macOS、Linux × Node.js 22/24，以及 CLI `0.153.4`、`0.159.2`、`0.160.0` 的隔离安装/升级。[对应提交的 12 个 CI 任务](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180)全部通过。
 - CI 用合成输入调用已安装的 Hook，不能替代各平台交互式界面的实测，也不是 TPS 精度基准。macOS/Linux 交互式界面尚未独立验证；生成速率尚未与受控流式响应对照验证误差。
 - 历史 Windows 交互实测覆盖 CLI `0.149.1` 的 Hook 时序与 `0.153.4` 的安装和显示；这些是已有版本的证据，不代表所有后续版本均已交互验证。
 - 历史实验中 `codex exec` 没有运行项目 Hook，目前支持承诺以交互式会话为准。

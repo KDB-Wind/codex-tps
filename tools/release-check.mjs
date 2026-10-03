@@ -44,7 +44,7 @@ assert.equal(manifest.version, expectedVersion);
 assert.equal(pluginPackage.version, expectedVersion);
 assert.equal(rootPackage.version, expectedVersion);
 assert.equal(manifest.license, "MIT");
-assert.equal(manifest.repository, "https://github.com/KDB-Wind/codex-tps-plus");
+assert.equal(manifest.repository, "https://github.com/KDB-Wind/codex-tps");
 assert.ok(Array.isArray(manifest.interface.defaultPrompt));
 assert.ok(manifest.interface.defaultPrompt.length <= 3);
 assert.equal(manifest.skills, "./skills/");

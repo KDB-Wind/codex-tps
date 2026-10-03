@@ -6,8 +6,8 @@
     "name": "KDB-Wind",
     "url": "https://github.com/KDB-Wind"
   },
-  "homepage": "https://github.com/KDB-Wind/codex-tps-plus#readme",
-  "repository": "https://github.com/KDB-Wind/codex-tps-plus",
+  "homepage": "https://github.com/KDB-Wind/codex-tps#readme",
+  "repository": "https://github.com/KDB-Wind/codex-tps",
   "license": "MIT",
   "skills": "./skills/",
   "keywords": [
@@ -18,7 +18,7 @@
     "observability"
   ],
   "interface": {
-    "displayName": "Codex TPS Plus",
+    "displayName": "Codex TPS",
     "shortDescription": "Local generation TPS estimates with no model requests.",
     "longDescription": "Runs local Stop hooks without model requests. Shows a generation TPS estimate only with complete matched evidence; unavailable timing stays unavailable. Optional tps and tps-doctor skills provide convenient queries.",
     "developerName": "KDB-Wind",
