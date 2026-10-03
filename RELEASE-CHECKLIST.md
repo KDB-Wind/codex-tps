@@ -1,5 +1,32 @@
 # Release checklist
 
+## 0.7.4 validation record — 2026-10-03
+
+- The repository package, plugin package, and manifest identify version `0.7.4`.
+- Local validation passes 141 tests and the candidate structure check. CLI `0.153.4`,
+  `0.159.2`, and `0.160.0` each pass isolated installation/upgrade smoke without model requests.
+- Commit `8fe7de8` passes all 12 Windows/macOS/Linux CI jobs
+  ([run 37050730180](https://github.com/KDB-Wind/codex-tps-plus/actions/runs/37050730180)).
+  Later commits must pass their own CI before their changes are described as validated.
+- This record covers the main-branch candidate. It does not establish a `v0.7.4` tag or
+  published GitHub Release.
+
+### Current product contract
+
+- Automatic Stop hooks execute local scripts without additional model requests.
+- The default line labels current, recent, and retained-session generation TPS estimates.
+  Generation requires complete matched response timing; unavailable evidence stays unavailable.
+- Generation uses measurement version 3: `sum(output_tokens - 1) / sum(output_window_seconds)`.
+  Reasoning is already included in output tokens; compaction and tool execution are excluded.
+  Client windows remain estimates, not server token-level decoding measurements.
+- Recent comparisons use up to five eligible same-setting turns; session comparisons use all
+  retained eligible same-setting turns. Both divide total token intervals by total window time.
+- TTFT and end-to-end throughput are separately labeled details. Neither replaces generation TPS.
+- Optional query skills remain available; their AI replies use the querying conversation's tokens.
+- Completion backfill, stable runtime recovery, bounded redacted storage, and opt-in experiments
+  retain their existing constraints. See [metric definitions](docs/metrics.md) and
+  [runtime and storage](docs/architecture.md).
+
 ## 0.6.0 release approval — 2026-09-08
 
 - [x] The repository, plugin package, and plugin manifest identify version `0.6.0`.
@@ -32,13 +59,17 @@ After trial approval: merge the validated changes to main, rerun the matrix, tag
 and require the tag matrix (including `release:verify`) to pass before publishing a GitHub Release.
 No automatic release publication is configured.
 
-`npm run smoke:install` requires Git, tar, and globally installed `@openai/codex@0.153.4` (or
-`CODEX_CLI_JS` pointing to its `bin/codex.js`). It installs 0.5.0 from the local tagged archive,
+`npm run smoke:install` requires Git, tar, and a supported globally installed `@openai/codex`
+(or `CODEX_CLI_JS` pointing to its `bin/codex.js`, or `CODEX_CLI_EXE` pointing to the native executable).
+The current workflow checks CLI `0.153.4`, `0.159.2`, and `0.160.0`. It installs 0.6.0 from the local tagged archive,
 upgrades through a configured local marketplace to the working candidate, checks the installed cache,
 and exercises the actual shell Hook commands. It does not send a model request or replace interactive
 TUI validation. The default test workflow runs this smoke on every matrix entry.
 
-## Product contract
+## Historical 0.6.0 product contract
+
+These checked items describe the released 0.6.0 behavior. The current generation-only
+display uses the 0.7.4 contract above; these historical end-to-end formulas do not define it.
 
 - [x] The automatic line leads with non-reasoning output divided by end-to-end turn duration.
 - [x] `reasoning_output_tokens` is validated as a subset, subtracted once from the primary numerator,
@@ -57,7 +88,7 @@ TUI validation. The default test workflow runs this smoke on every matrix entry.
       modify the user's exporter configuration.
 - [x] Hook failures degrade without steering or extending the model turn.
 
-## Runtime evidence
+## Historical 0.6.0 runtime evidence
 
 - [x] The synchronous handler emits strict JSON and persists only redacted numeric status.
 - [x] The background handler independently backfills available TTFT and completion duration.
@@ -70,7 +101,7 @@ TUI validation. The default test workflow runs this smoke on every matrix entry.
 - [x] The phase-six observer remains capture-only for untested schemas/daemons and does not gain a
       passive App Server role.
 
-## Distribution and safety
+## Historical 0.6.0 distribution and safety
 
 - [x] The repository contains `.agents/plugins/marketplace.json`.
 - [x] The plugin is located at `plugins/codex-tps-plus` and has a valid manifest.
