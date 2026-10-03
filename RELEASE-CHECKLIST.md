@@ -1,5 +1,36 @@
 # Release checklist
 
+## 0.7.5 validation record — 2026-10-03
+
+- Package and manifest versions are `0.7.5`; 151 local tests pass.
+- CLI `0.159.2` passes isolated installation/upgrade smoke, including partial Hook output,
+  separate complete/partial history, and the existing completion and cache-recovery checks.
+- Network APIs, network imports, and child-process imports are denied during complete and
+  partial Hook regression checks; no model requests are sent.
+- A redacted 15,684-token real-turn replay matches the original logs. Measured response
+  coverage improves from 7/20 to 14/20; output-token coverage improves from 32.6% to 74.9%.
+- This is a main-branch candidate. The configured cross-platform/CLI matrix must pass for
+  each pushed commit; there is no claimed `v0.7.5` tag or published GitHub Release.
+- Details and limits: [candidate evidence](plugins/codex-tps-plus/reports/0.7.5-candidate.md).
+
+### Current product contract
+
+- Automatic Stop hooks execute local scripts without additional model requests.
+- Complete timing displays current-turn TPS; validated partial timing displays a measured
+  subset with token coverage. Only absence of a trustworthy sample displays unavailable.
+- Complete and partial histories remain separate and explicitly labeled. Recent uses up
+  to five same-setting samples of the selected type; session uses all retained eligible samples.
+- Evidence version 4 keeps `sum(output_tokens - 1) / sum(output_window_seconds)`. Complete
+  version-3 history remains compatible; stored older partial evidence is not promoted.
+- `available`, `coverageComplete`, and `tps` retain complete-turn semantics; partial values
+  use `sampleAvailable`, `measuredTps`, and `coverageType`. No end-to-end fallback is used.
+- FileChange is supported; detached commands require a unique identified start envelope.
+  Parse gaps, conflicting usage, ambiguous scope and overlapping responses remain excluded.
+- Old history is flagged after five subsequent same-setting turns or one hour since capture.
+- Default output count excludes identified compaction; JSON preserves total usage and scopes.
+- TTFT and end-to-end throughput remain separate details. Optional Skill replies use the
+  existing conversation's tokens; stable recovery, backfill and bounded privacy remain intact.
+
 ## 0.7.4 validation record — 2026-10-03
 
 - The repository package, plugin package, and manifest identify version `0.7.4`.
@@ -11,7 +42,7 @@
 - This record covers the main-branch candidate. It does not establish a `v0.7.4` tag or
   published GitHub Release.
 
-### Current product contract
+### Historical 0.7.4 product contract
 
 - Automatic Stop hooks execute local scripts without additional model requests.
 - The default line labels current, recent, and retained-session generation TPS estimates.
@@ -69,7 +100,7 @@ TUI validation. The default test workflow runs this smoke on every matrix entry.
 ## Historical 0.6.0 product contract
 
 These checked items describe the released 0.6.0 behavior. The current generation-only
-display uses the 0.7.4 contract above; these historical end-to-end formulas do not define it.
+display uses the 0.7.5 contract above; these historical end-to-end formulas do not define it.
 
 - [x] The automatic line leads with non-reasoning output divided by end-to-end turn duration.
 - [x] `reasoning_output_tokens` is validated as a subset, subtracted once from the primary numerator,

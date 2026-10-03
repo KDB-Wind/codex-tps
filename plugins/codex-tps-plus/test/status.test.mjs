@@ -716,7 +716,7 @@ test("Stop capture keeps end-to-end throughput in details and explains unavailab
   );
   assert.equal(result.status.session.throughput, 3);
   assert.equal(result.status.latest.requestThroughput, 6);
-  assert.equal(result.line, "⚡ 生成 TPS 估计 · 本轮 暂不可测（响应范围未确认） · 近期 暂无有效样本 · 会话 暂无有效样本 · 输出 10 tok");
+  assert.equal(result.line, "⚡ 生成 TPS 估计 · 本轮 暂不可测（响应范围未确认） · 近期完整 暂无有效样本 · 会话完整 暂无有效样本 · 输出 10 tok");
   assert.equal(result.status.isPureGenerationTps, false);
   assert.equal(result.status.requestThroughputIncludesTtft, true);
   assert.equal(formatStatusLine(result.status).startsWith("⚡ 非推理输出吞吐 3.0"), true);

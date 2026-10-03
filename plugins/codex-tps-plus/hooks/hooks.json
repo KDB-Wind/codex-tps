@@ -1,5 +1,5 @@
 {
-  "description": "Local generation TPS estimates with complete matched timing and delayed evidence backfill; missing version caches fall back safely through PLUGIN_DATA.",
+  "description": "Local generation TPS estimates with explicit measured coverage and delayed evidence backfill; missing version caches fall back safely through PLUGIN_DATA.",
   "hooks": {
     "Stop": [
       {

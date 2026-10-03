@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.5 - 2026-10-03
+
+- Display trustworthy partial timing as “本轮已测” with output-token coverage. Complete-turn `tps` remains unavailable when coverage is incomplete; the measured subset has its own `measuredTps` and `sampleAvailable` fields.
+- Keep complete and partial same-setting histories separate. The compact Hook chooses the history matching current coverage and labels it explicitly; JSON and details expose both. Mark old samples after five subsequent same-setting turns or an hour without a new sample.
+- Support native FileChange timing. Associate detached commands through a unique start within an identified call/return envelope, preventing late process completion from attaching to a later poll or blocking subsequent output windows.
+- Use evidence version 4 with the existing token-interval/window formula. Accept complete version-3 history for continuity; never promote saved version-3 partial evidence automatically. Parse gaps, conflicting usage, unclassified scope, overlapping response windows and pending output still suppress all generation samples.
+- Exclude identified compaction from the default output count regardless of timing coverage. Preserve total usage and compaction breakdown in JSON.
+- Add a redacted 15,684-token real-turn regression and partial coverage, history, staleness, invalid-state and detached-command checks. Automatic hooks remain local scripts with no additional model requests.
+
 ## 0.7.4 - 2026-10-03
 
 - Restore three labeled generation estimates in the automatic Hook: current turn, up to five recent eligible turns, and retained eligible session history. Show actual sample counts and keep output tokens.

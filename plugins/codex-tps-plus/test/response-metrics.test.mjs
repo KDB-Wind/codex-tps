@@ -203,7 +203,7 @@ test("modern extraction persists safe summaries, preserves timing and shows thre
   recordStopMetric({ dataDir: directory, sessionId: "session", turnId: "turn", metric });
   const status = readSessionStatus({ dataDir: directory, sessionId: "session" });
   assert.equal(status.latest.context.model, "gpt-test");
-  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 ≈99.0 tok/s（短输出） · 近期 ≈99.0 tok/s（1轮） · 会话 ≈99.0 tok/s（1轮） · 输出 100 tok");
+  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 ≈99.0 tok/s（短输出） · 近期完整 ≈99.0 tok/s（1轮） · 会话完整 ≈99.0 tok/s（1轮） · 输出 100 tok");
   const files = fs.readdirSync(path.join(directory, "status"), { recursive: true }).filter(x => x.endsWith(".json"));
   const saved = files.map(x => fs.readFileSync(path.join(directory, "status", x), "utf8")).join("");
   assert.doesNotMatch(saved, /PRIVATE|response_id|thread_id|synthetic\.jsonl|"arguments"/);
@@ -229,7 +229,7 @@ test("invalid persisted timing falls back with an explicit reason instead of dis
 test("default history excludes end-to-end averages while verbose details preserve them", () => {
   const status = summarizeStatusRecords([{ outputTokens: 100, reasoningTokens: 20, durationMs: 5000, ttftMs: 1000 },
     { outputTokens: 200, reasoningTokens: 40, durationMs: 10000 }]);
-  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期 暂无有效样本 · 会话 暂无有效样本 · 输出 200 tok");
+  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期完整 暂无有效样本 · 会话完整 暂无有效样本 · 输出 200 tok");
   assert.equal(status.displayMetric, "generation_tps_unavailable");
   assert.doesNotMatch(formatStatusLine(status), /TTFT|会话 [\d≈]|推理 40/);
   assert.match(formatStatusLine(status, { verbose: true }), /最近有效 TTFT/);
@@ -455,16 +455,16 @@ test("recent comparisons use the last five complete same-setting turns and token
   assert.equal(status.sessionGeneration.latestTurnIncluded, false);
   assert.equal(status.sessionGeneration.sampleLimit, null);
   assert.equal(status.sessionGeneration.historyScope, "retained-session-records");
-  assert.match(formatStatusLine(status), /本轮 暂不可测 · 近期 ≈38.1 tok\/s（5轮） · 会话 ≈46.2 tok\/s（7轮）/);
+  assert.match(formatStatusLine(status), /本轮 暂不可测 · 近期完整 ≈38.1 tok\/s（5轮） · 会话完整 ≈46.2 tok\/s（7轮）/);
   assert.equal(status.latest.generation, null);
   assert.match(formatStatusLine(status), /暂不可测/);
-  assert.match(formatRecentGeneration(status), /近期同设置加权.*最近 5 个有效轮次/);
+  assert.match(formatRecentGeneration(status), /近期完整同设置加权.*最近 5 个完整计时轮次/);
 });
 
 test("unavailable Hook gives a compact reason; query details expose partial coverage without a partial TPS", () => {
   const g = analyze([start(), item("r", 1000, 2000, "Reasoning"), call(), used("a", 400, 100)]).generation;
   const status = summarizeStatusRecords([{ outputTokens: 400, durationMs: 5000, generation: g }]);
-  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期 暂无有效样本 · 会话 暂无有效样本 · 输出 400 tok");
+  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期完整 暂无有效样本 · 会话完整 暂无有效样本 · 输出 400 tok");
   assert.match(formatStatusDetails(status), /计时覆盖：0\/1.*输出 token 覆盖 0.0%/);
   assert.match(formatStatusDetails(status), /暂无有效样本/);
 });
@@ -481,8 +481,8 @@ test("local details, recent and JSON commands query saved evidence without a mod
   recordStopMetric({ dataDir: directory, sessionId: "session", turnId: "second", metric });
   const run = flag => execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/status.mjs", import.meta.url)),
     "--data-dir", directory, "--session-id", "session", flag], { encoding: "utf8", windowsHide: true });
-  assert.match(run("--details"), /本轮 ≈45.1.*近期 ≈45.1.*会话 ≈45.1.*\n计时覆盖：8\/8.*100.0%\n近期同设置加权/);
-  assert.match(run("--recent"), /^近期同设置加权：≈45.1.*最近 2 个有效轮次/);
+  assert.match(run("--details"), /本轮 ≈45.1.*近期完整 ≈45.1.*会话完整 ≈45.1.*\n计时覆盖：8\/8.*100.0%\n近期完整同设置加权/);
+  assert.match(run("--recent"), /^近期完整同设置加权：≈45.1.*最近 2 个完整计时轮次/);
   const json = JSON.parse(run("--json"));
   assert.equal(json.recentGeneration.measuredTurns, 2);
   assert.equal(json.recentGeneration.latestTurnIncluded, true);
@@ -521,7 +521,7 @@ test("three-speed Hook keeps missing current timing distinct and excludes other 
     assert.equal(metric.tps, 99);
     assert.equal(metric.latestTurnIncluded, false);
   }
-  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期 ≈99.0 tok/s（1轮） · 会话 ≈99.0 tok/s（1轮） · 输出 10.0k tok");
+  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期完整 ≈99.0 tok/s（1轮） · 会话完整 ≈99.0 tok/s（1轮） · 输出 10.0k tok");
 });
 
 test("generation history weights valid inter-token intervals without mixing missing or old measurements", () => {
@@ -537,5 +537,5 @@ test("generation history weights valid inter-token intervals without mixing miss
   assert.equal(status.modelGroups[0].generationIntervalTokens, 198);
   assert.equal(status.modelGroups[0].outputSpeedEstimate, 19.8);
   assert.equal(status.latest.generation, null);
-  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期 ≈19.8 tok/s（2轮） · 会话 ≈19.8 tok/s（2轮） · 输出 10.0k tok");
+  assert.equal(formatStatusLine(status), "⚡ 生成 TPS 估计 · 本轮 暂不可测 · 近期完整 ≈19.8 tok/s（2轮） · 会话完整 ≈19.8 tok/s（2轮） · 输出 10.0k tok");
 });

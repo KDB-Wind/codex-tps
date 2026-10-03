@@ -23,19 +23,23 @@ function check(name, ok, detail, hint = null) {
 }
 
 function runCodex(args) {
+  if (process.env.CODEX_CLI_EXE) {
+    return spawnSync(process.env.CODEX_CLI_EXE, args, { encoding: "utf8", shell: false, windowsHide: true, timeout: 30_000 });
+  }
   if (process.platform === "win32") {
     return spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "codex", ...args], {
       encoding: "utf8",
       shell: false,
       windowsHide: true,
+      timeout: 30_000,
     });
   }
-  return spawnSync("codex", args, { encoding: "utf8", shell: false });
+  return spawnSync("codex", args, { encoding: "utf8", shell: false, timeout: 30_000 });
 }
 
 function codexVersion() {
   const result = runCodex(["--version"]);
-  const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+  const output = `${result.stdout || ""}${result.stderr || ""}${result.error?.message || ""}`.trim();
   const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
   const version = match ? match[0] : null;
   const ok = Boolean(match && Number(match[1]) >= 0);
@@ -44,7 +48,7 @@ function codexVersion() {
 
 function pluginInstallation(version) {
   const result = runCodex(["plugin", "list", "--json"]);
-  const output = `${result.stdout || ""}${result.stderr || ""}`;
+  const output = `${result.stdout || ""}${result.stderr || ""}${result.error?.message || ""}`;
   let selected = null;
   try {
     selected = selectPluginInstallation(JSON.parse(result.stdout || "{}").installed, version);
@@ -217,8 +221,12 @@ if (otelCapture) {
 const sessionId = option("--session-id") || process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
 const status = sessionId ? readSessionStatus({ dataDir: option("--data-dir") || resolvePluginDataDir(), sessionId }) : null;
 const timing = { available: Boolean(status?.latest?.generation?.available),
+  sampleAvailable: Boolean(status?.latest?.generation?.sampleAvailable),
+  coverageType: status?.latest?.generation?.coverageType ?? "unavailable",
   reason: status?.available ? generationUnavailableLabel(status.latest.generation?.exclusionReasons) : "暂无当前会话统计",
   generation: status?.latest?.generation ?? null, recentGeneration: status?.recentGeneration ?? null,
+  recentPartialGeneration: status?.recentPartialGeneration ?? null,
+  sessionPartialGeneration: status?.sessionPartialGeneration ?? null,
   sessionGeneration: status?.sessionGeneration ?? null };
 const report = { doctorVersion: 2, root, checks: results, timing, failed: results.filter((item) => !item.ok).length };
 if (process.argv.includes("--json")) {
@@ -229,6 +237,8 @@ if (process.argv.includes("--json")) {
     if (item.hint) console.log(`  -> ${item.hint}`);
   }
   console.log(report.failed ? `${report.failed} check(s) failed` : "All checks passed");
-  console.log(`Generation timing: ${timing.available ? "available" : timing.reason || "计时证据缺失"}`);
+  console.log(`Generation timing: ${timing.available ? "complete" : timing.sampleAvailable
+    ? `partial (${((timing.generation.measuredOutputTokenFraction ?? 0) * 100).toFixed(1)}% output-token coverage)`
+    : timing.reason || "计时证据缺失"}`);
 }
 process.exitCode = report.failed ? 1 : 0;

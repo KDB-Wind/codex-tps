@@ -21,11 +21,19 @@ legacy cumulative output snapshot from before task_started is not a new response
 loosening coverage rules to obtain a higher number.
 
 Use doctor.timing and status.latest.generation to distinguish installation failures from measurement
-coverage. Report response coverage and output-token coverage when useful. Completion backfill rereads
+coverage. available/coverageComplete describe complete timing; sampleAvailable/measuredTps describe
+a trustworthy measured subset, labeled “本轮已测” with output-token coverage. Partial availability
+is not an installation failure. Report all exclusion reason counts when diagnosing low coverage,
+not just the first Hook reason. FileChange is supported; a completed command returning before native
+completion is treated as detached only through a unique identified start envelope. Missing or
+ambiguous evidence stays excluded. Completion backfill rereads
 generation evidence once; saved queries can improve after the Hook, but an already printed Hook line
 does not update. recentGeneration and sessionGeneration are comparisons of eligible saved same-setting
 turns, never replacements for the current turn. The Hook labels all three speeds and measured sample
-counts; missing historical samples do not indicate a failed installation.
+counts; missing historical samples do not indicate a failed installation. Complete history is in
+recentGeneration/sessionGeneration; partial history is in recentPartialGeneration/sessionPartialGeneration.
+Keep the types separate and mark stale samples. Partial evidence requires version 4; complete
+version-3 evidence uses the same formula and remains compatible.
 
 Completion duration and TTFT backfill independently. They describe turn timing and must not be used
 to fabricate generation speed by subtracting one TTFT from full turn duration. Missing generation

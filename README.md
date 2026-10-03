@@ -17,10 +17,10 @@ Automatically display three generation TPS estimates in Codex CLI: current turn,
 Hook output is currently in Chinese: 本轮 = current turn, 近期 = recent, 会话 = session, 输出 = output tokens, and 暂不可测 = unavailable.
 
 ```text
-⚡ 生成 TPS 估计 · 本轮 ≈32.8 tok/s · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
+⚡ 生成 TPS 估计 · 本轮 ≈32.8 tok/s · 近期完整 ≈35.2 tok/s（5轮） · 会话完整 ≈34.6 tok/s（12轮） · 输出 2.5k tok
 ```
 
-This example illustrates the format, not a model speed benchmark. The current-turn estimate requires complete timing evidence; otherwise, it shows “unavailable” with a reason.
+This example illustrates the format, not a model speed benchmark. Complete timing shows a current-turn estimate; partial timing shows “本轮已测” (measured subset) with output-token coverage. With no trustworthy sample, it shows “unavailable” with a reason.
 
 ## Quick start
 
@@ -42,21 +42,27 @@ The repository is named `codex-tps`. The plugin identifier remains `codex-tps-pl
 
 | Speed | Scope |
 | --- | --- |
-| Current turn (本轮) | Complete client output windows for ordinary responses in the current turn |
-| Recent (近期) | Up to 5 latest valid turns with matching settings in this session |
-| Session (会话) | All retained valid turns with matching settings in this session |
+| Current turn (本轮 / 本轮已测) | All ordinary responses when complete; otherwise only verified responses, with token coverage |
+| Recent (近期完整 / 近期已测) | Up to 5 latest valid turns of the displayed coverage type with matching settings |
+| Session (会话完整 / 会话已测) | All retained valid turns of that coverage type with matching settings |
 
-Historical values match the recorded model, provider, and reasoning effort. They are weighted as total token intervals divided by total generation-window duration; parentheses show the actual number of valid turns. Older measurement methods and unavailable turns are excluded. Unknown settings remain unknown.
+Historical values match the recorded model, provider, and reasoning effort. They are weighted as total token intervals divided by total generation-window duration; parentheses show the actual number of valid turns. Complete and partial histories are kept separate. The Hook shows the type matching the current result; with no current sample, it prefers complete history and uses explicitly labeled partial history if no complete samples exist. Unknown settings remain unknown. “旧样本” flags a history whose latest sample is at least an hour old or followed by five same-setting turns.
 
 The generation estimate includes reasoning and other output with reliable timing. It excludes waiting before the first output in each window, identifiable tool execution, and compaction. Client logs are not server-side token-by-token decoding traces, and windows may still contain pauses, so results are always labeled as estimates.
 
-Historical values can still appear when the current turn lacks sufficient evidence:
+Partial timing can provide a useful reference without claiming to measure the entire turn:
 
 ```text
-⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期 ≈35.2 tok/s（5轮） · 会话 ≈34.6 tok/s（12轮） · 输出 2.5k tok
+⚡ 生成 TPS 估计 · 本轮已测 ≈60.0 tok/s（覆盖74.9%） · 近期已测 ≈58.2 tok/s（5轮） · 会话已测 ≈57.6 tok/s（12轮） · 输出 10.5k tok
 ```
 
-Short outputs are flagged; a single-token output cannot be measured. TTFT and end-to-end turn throughput are available only in the details. See the [metric guide](docs/metrics.md) (Chinese) for formulas, coverage rules, and field meanings.
+Coverage is measured ordinary output tokens divided by all ordinary output tokens. Measured subsets may favor responses with available timing; they are not whole-turn or model benchmarks. Historical values can still appear when the current turn has no trustworthy sample:
+
+```text
+⚡ 生成 TPS 估计 · 本轮 暂不可测（工具计时未匹配） · 近期完整 ≈35.2 tok/s（5轮） · 会话完整 ≈34.6 tok/s（12轮） · 输出 2.5k tok
+```
+
+Short outputs are flagged; a single-token output cannot be measured. The displayed output count excludes identified compaction; JSON retains total usage and its scope breakdown. TTFT and end-to-end turn throughput are available only in the details. See the [metric guide](docs/metrics.md) (Chinese) for formulas, coverage rules, and field meanings.
 
 ## Query and diagnose
 
@@ -73,7 +79,7 @@ npm run doctor -- --json
 The session argument can be omitted in a terminal with `CODEX_THREAD_ID` or `CODEX_SESSION_ID`. See [local command options](plugins/codex-tps-plus/docs/local-commands.md) (Chinese).
 
 - **No output:** Check plugin enablement, Hook trust, a new session, and Node.js, then run the doctor. See [troubleshooting](docs/troubleshooting.md#没有显示指标) (Chinese).
-- **Unavailable speed:** Inspect `latest.generation.exclusionReasons` in JSON. A successful installation does not guarantee complete timing coverage.
+- **Unavailable speed:** Inspect `latest.generation.exclusionReasons` in JSON. Parse gaps, conflicting usage, ambiguous scope, and missing timing can still prevent a trustworthy sample. A successful installation does not guarantee timing coverage.
 - **All three speeds are identical:** This is expected with one valid sample, or when the recent window covers all valid history.
 
 ## Upgrade
@@ -93,7 +99,7 @@ Each session retains at most 200 state files totaling 2 MiB; session speed is ca
 
 ## Development and validation
 
-Version 0.7.4 passed 141 local tests. All 12 jobs in the [CI run for the corresponding commit](https://github.com/KDB-Wind/codex-tps/actions/runs/37050730180) passed, covering Windows/macOS/Linux × Node.js 22/24 and installation/upgrade checks with CLI 0.153.4, 0.159.2, and 0.160.0.
+Version 0.7.5 adds partial coverage, separate histories, FileChange timing, and detached-command matching. See the [candidate validation record](plugins/codex-tps-plus/reports/0.7.5-candidate.md) for evidence and limits. CI covers Windows/macOS/Linux × Node.js 22/24 and installation/upgrade checks with CLI 0.153.4, 0.159.2, and 0.160.0.
 
 Installation smoke checks use synthetic Hook input without model requests. These checks do not establish interactive UI testing on all three platforms or benchmark TPS accuracy.
 

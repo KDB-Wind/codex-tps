@@ -49,7 +49,7 @@ test("production hooks work with network APIs, network imports and child process
     }));
   const collector = run("collector.mjs");
   assert.deepEqual(Object.keys(collector), ["systemMessage"]);
-  assert.match(collector.systemMessage, /本轮 ≈199\.0 tok\/s · 近期 ≈199\.0 tok\/s（1轮） · 会话 ≈199\.0 tok\/s（1轮）/);
+  assert.match(collector.systemMessage, /本轮 ≈199\.0 tok\/s · 近期完整 ≈199\.0 tok\/s（1轮） · 会话完整 ≈199\.0 tok\/s（1轮）/);
   assert.deepEqual(run("backfill.mjs"), {});
   const statusRoot = path.join(env.PLUGIN_DATA, "status");
   const savedRecords = fs.readdirSync(statusRoot, { recursive: true }).filter(x => x.endsWith(".json"))
@@ -59,4 +59,15 @@ test("production hooks work with network APIs, network imports and child process
   const manifest = JSON.parse(fs.readFileSync(path.join(root, ".codex-plugin", "plugin.json")));
   assert.equal(manifest.skills, "./skills/");
   assert.equal(fs.existsSync(path.join(root, "skills", "tps", "SKILL.md")), true);
+  records.splice(-1, 0,
+    { timestamp: new Date(base + 2200).toISOString(), type: "response_item", payload: {
+      type: "custom_tool_call", id: "raw-unmeasured", call_id: "unmeasured",
+    } },
+    { timestamp: new Date(base + 2300).toISOString(), type: "token_usage_record", payload: {
+      thread_id: "local-session", turn_id: "local", response_id: "unmeasured-response",
+      usage: { output_tokens: 400, reasoning_output_tokens: 0 },
+    } });
+  fs.writeFileSync(transcript, records.map(JSON.stringify).join("\n") + "\n");
+  assert.match(run("collector.mjs").systemMessage, /本轮已测 ≈199\.0 tok\/s（覆盖33.3%）/);
+  assert.deepEqual(run("backfill.mjs"), {});
 });

@@ -23,6 +23,7 @@ npm run smoke:install
 安装冒烟使用隔离的临时 `CODEX_HOME`、实际 CLI 和合成 Hook 输入，不发送模型请求。运行它需要 Git、tar 和可用的 Codex CLI；具体 CLI 路径选项见[发布检查清单](../RELEASE-CHECKLIST.md#check-modes-and-promotion)。
 
 - [0.7.4：三项显示与提交前审查](../plugins/codex-tps-plus/reports/0.7.4-candidate.md)
+- [0.7.5：部分计时、独立历史与后台命令](../plugins/codex-tps-plus/reports/0.7.5-candidate.md)
 - [0.7.3：迟到事件与工具计时](../plugins/codex-tps-plus/reports/0.7.3-candidate.md)
 - [0.7.2：查询 Skill 与跨轮快照](../plugins/codex-tps-plus/reports/0.7.2-candidate.md)
 - [0.7.1：固定生成口径](../plugins/codex-tps-plus/reports/0.7.1-candidate.md)

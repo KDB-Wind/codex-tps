@@ -777,22 +777,45 @@ export function pruneStatusFiles(directory, fileSystem = fs) {
   }
 }
 
-function generationForRecord(record) {
+function generationForRecord(record, coverageType = "complete") {
   const g = record?.generation;
   const ordinary = record?.responseMetrics?.scopes?.ordinary;
-  if (!g?.available || !g.coverageComplete ||
+  const complete = coverageType === "complete";
+  if (!g || (complete ? !g.available || !g.coverageComplete :
+    g.available || g.coverageComplete || !g.sampleAvailable || g.coverageType !== "partial" || g.measurementVersion !== 4) ||
     g.source !== "matched-client-output-windows" ||
-    g.measurementVersion !== 3 ||
+    ![3, 4].includes(g.measurementVersion) ||
+    (complete && g.measurementVersion === 4 && (!g.sampleAvailable || g.coverageType !== "complete" ||
+      g.excludedResponses !== 0 || g.measuredOutputTokenFraction !== 1)) ||
     !Number.isSafeInteger(g.outputTokens) || g.outputTokens < 0 || g.outputTokens > record.outputTokens ||
     !Number.isSafeInteger(g.measuredResponses) || g.measuredResponses <= 0 ||
-    g.measuredResponses !== g.ordinaryResponses ||
-    (record.responseMetrics && (!ordinary || ordinary.outputTokens !== g.outputTokens ||
-      ordinary.responses !== g.ordinaryResponses)) ||
+    !Number.isSafeInteger(g.ordinaryResponses) || g.ordinaryResponses < g.measuredResponses ||
+    (complete && g.measuredResponses !== g.ordinaryResponses) ||
+    (record.responseMetrics && (!ordinary || !Number.isSafeInteger(ordinary.outputTokens) ||
+      ordinary.outputTokens > record.outputTokens || ordinary.outputTokens < g.outputTokens ||
+      (complete && ordinary.outputTokens !== g.outputTokens) || ordinary.responses !== g.ordinaryResponses ||
+      record.responseMetrics.scopes.unclassified?.responses !== 0)) ||
     !Number.isSafeInteger(g.intervalOutputTokens) || g.intervalOutputTokens <= 0 ||
     g.intervalOutputTokens !== g.outputTokens - g.measuredResponses ||
-    Object.keys(g.exclusionReasons || {}).length !== 0 ||
+    g.outputTokens < 2 * g.measuredResponses ||
+    (complete && Object.keys(g.exclusionReasons || {}).length !== 0) ||
     validDurationMs(g.durationMs) === null || g.durationMs > endToEndDurationForRecord(record)) return null;
-  return { ...g, tps: g.intervalOutputTokens / (g.durationMs / 1000) };
+  if (!complete) {
+    const recoverable = new Set(["unconfirmed_tool_start", "tool_argument_timing_unconfirmed", "tool_execution_overlaps_output",
+      "reasoning_timing_missing", "reasoning_usage_unknown", "unconfirmed_item_span", "output_timing_missing",
+      "unmatched_model_output", "insufficient_output_tokens", "conflicting_or_missing_output_evidence",
+      "output_window_out_of_bounds", "non_reasoning_timing_missing", "legacy_response_identity_missing"]);
+    const reasons = Object.entries(g.exclusionReasons || {});
+    if (!ordinary || g.measuredResponses >= g.ordinaryResponses ||
+      g.excludedResponses !== g.ordinaryResponses - g.measuredResponses ||
+      reasons.some(([key, n]) => !recoverable.has(key) || !Number.isSafeInteger(n) || n <= 0) ||
+      reasons.reduce((sum, [, n]) => sum + n, 0) !== g.excludedResponses ||
+      record.responseMetrics.scopes.unclassified?.responses !== 0 ||
+      !Number.isFinite(g.measuredOutputTokenFraction) ||
+      Math.abs(g.measuredOutputTokenFraction - g.outputTokens / ordinary.outputTokens) > 1e-9) return null;
+  }
+  return { ...g, tps: g.intervalOutputTokens / (g.durationMs / 1000),
+    coverageType, measuredOutputTokenFraction: complete ? 1 : g.measuredOutputTokenFraction };
 }
 
 function groupedSessionMetrics(records) {
@@ -814,30 +837,40 @@ function groupedSessionMetrics(records) {
     outputSpeedEstimate: g.generationDurationMs > 0 ? g.generationIntervalTokens / (g.generationDurationMs / 1000) : null }));
 }
 
-function generationComparisonMetrics(records, latest, limit = 5) {
+function generationComparisonMetrics(records, latest, limit = 5, coverageType = "complete", nowMs = Date.now()) {
   const contextKey = r => JSON.stringify([r?.context?.model ?? null, r?.context?.provider ?? null, r?.context?.reasoningEffort ?? null]);
   const matching = records.filter(r => contextKey(r) === contextKey(latest));
-  const eligible = matching.filter(r => generationForRecord(r));
+  const eligible = matching.filter(r => generationForRecord(r, coverageType));
   const selected = limit === null ? eligible : eligible.slice(-limit);
   const intervalOutputTokens = selected.reduce((n, r) => n + r.generation.intervalOutputTokens, 0);
   const durationMs = selected.reduce((n, r) => n + r.generation.durationMs, 0);
+  const outputTokens = selected.reduce((n, r) => n + r.generation.outputTokens, 0);
+  const ordinaryOutputTokens = selected.reduce((n, r) => n + (r.responseMetrics?.scopes?.ordinary?.outputTokens ?? r.generation.outputTokens), 0);
+  const newest = selected.at(-1);
+  const turnsSinceLastSample = newest ? matching.length - 1 - matching.indexOf(newest) : null;
+  const sampleAgeMs = newest && Number.isFinite(nowMs) && Number.isFinite(Date.parse(newest.capturedAt))
+    ? Math.max(0, nowMs - Date.parse(newest.capturedAt)) : null;
   return { available: selected.length > 0, context: latest?.context ?? null, sampleLimit: limit,
-    historyScope: "retained-session-records",
+    historyScope: "retained-session-records", coverageType,
     measuredTurns: selected.length, eligibleTurns: eligible.length, matchingTurns: matching.length,
     excludedTurns: matching.length - eligible.length, intervalOutputTokens, durationMs,
     tps: durationMs > 0 ? intervalOutputTokens / (durationMs / 1000) : null,
     latestTurnIncluded: selected.includes(latest),
     shortOutputTurns: selected.filter(r => r.generation.shortOutput).length,
-    firstCapturedAt: selected[0]?.capturedAt ?? null, lastCapturedAt: selected.at(-1)?.capturedAt ?? null,
-    measurementVersion: 3, isPureGenerationTps: false };
+    outputTokens, ordinaryOutputTokens, measuredOutputTokenFraction: ordinaryOutputTokens > 0 ? outputTokens / ordinaryOutputTokens : null,
+    firstCapturedAt: selected[0]?.capturedAt ?? null, lastCapturedAt: newest?.capturedAt ?? null,
+    turnsSinceLastSample, sampleAgeMs, stale: turnsSinceLastSample >= 5 || sampleAgeMs >= 60 * 60 * 1000,
+    measurementVersion: 4, isPureGenerationTps: false };
 }
 
-export function summarizeStatusRecords(records) {
+export function summarizeStatusRecords(records, { nowMs = Date.now() } = {}) {
   const valid = (records || []).filter(
     (record) => finiteNumber(record.outputTokens) > 0 && endToEndDurationForRecord(record) !== null
   );
   const latest = valid.at(-1) || null;
   const latestGeneration = generationForRecord(latest);
+  const latestPartialGeneration = generationForRecord(latest, "partial");
+  const latestSample = latestGeneration || latestPartialGeneration;
   const latestNonReasoningOutputTokens = nonReasoningOutputForRecord(latest);
   const latestReasoningBreakdownAvailable = latestNonReasoningOutputTokens !== null;
   const latestUsesNonReasoning = latestReasoningBreakdownAvailable;
@@ -915,10 +948,12 @@ export function summarizeStatusRecords(records) {
       ? "non_reasoning_output_end_to_end_throughput"
       : "total_output_end_to_end_throughput",
     isPureGenerationTps: false,
-    displayMetric: latestGeneration ? "generation_tps_estimate" : "generation_tps_unavailable",
+    displayMetric: latestGeneration ? "generation_tps_estimate" : latestPartialGeneration ? "generation_tps_partial" : "generation_tps_unavailable",
     modelGroups: groupedSessionMetrics(valid),
-    recentGeneration: generationComparisonMetrics(valid, latest),
-    sessionGeneration: generationComparisonMetrics(valid, latest, null),
+    recentGeneration: generationComparisonMetrics(valid, latest, 5, "complete", nowMs),
+    sessionGeneration: generationComparisonMetrics(valid, latest, null, "complete", nowMs),
+    recentPartialGeneration: generationComparisonMetrics(valid, latest, 5, "partial", nowMs),
+    sessionPartialGeneration: generationComparisonMetrics(valid, latest, null, "partial", nowMs),
     requestCoverageCompleteForThroughput: latestRequestCoverageComplete,
     // Compatibility alias: an available inferred interval includes TTFT by construction.
     requestThroughputIncludesTtft: latestRequestCoverageComplete,
@@ -933,7 +968,9 @@ export function summarizeStatusRecords(records) {
           responseMetrics: latest.responseMetrics ?? null,
           generation: latest.generation ? { ...latest.generation, available: Boolean(latestGeneration),
             coverageComplete: Boolean(latestGeneration), tps: latestGeneration?.tps ?? null,
-            exclusionReasons: latest.generation.available && !latestGeneration
+            sampleAvailable: Boolean(latestSample), measuredTps: latestSample?.tps ?? null,
+            coverageType: latestGeneration ? "complete" : latestPartialGeneration ? "partial" : "unavailable",
+            exclusionReasons: (latest.generation.available || latest.generation.sampleAvailable) && !latestSample
               ? { ...latest.generation.exclusionReasons, invalid_saved_generation_evidence: 1 }
               : latest.generation.exclusionReasons } : null,
           outputTokens: latest.outputTokens,
@@ -1260,22 +1297,47 @@ export function generationUnavailableLabel(reasons) {
     invalid_saved_generation_evidence: "计时证据未通过校验",
   };
   const keys = Object.keys(reasons || {});
+  if (keys.includes("invalid_saved_generation_evidence")) return labels.invalid_saved_generation_evidence;
   return keys.length ? labels[keys.find(k => labels[k])] || "计时证据不完整" : null;
 }
 
+function displayedHistory(status) {
+  const partial = status?.latest?.generation?.coverageType === "partial" ||
+    !status?.recentGeneration?.available && status?.recentPartialGeneration?.available;
+  return { partial, recent: partial ? status?.recentPartialGeneration : status?.recentGeneration,
+    session: partial ? status?.sessionPartialGeneration : status?.sessionGeneration };
+}
+
+function coverageLabel(fraction) {
+  if (fraction === 1) return "100%";
+  if (fraction >= 0.9995) return "<100%";
+  if (fraction > 0 && fraction < 0.001) return "<0.1%";
+  return `${((fraction ?? 0) * 100).toFixed(1)}%`;
+}
+
+function comparisonLabel(label, metric) {
+  return metric?.available && Number.isFinite(metric.tps) && metric.measuredTurns > 0 ?
+    `${label} ≈${metric.tps.toFixed(1)} tok/s（${metric.measuredTurns}轮${metric.stale ? "，旧样本" : ""}）` : `${label} 暂无有效样本`;
+}
+
 export function formatRecentGeneration(status) {
-  const g = status?.recentGeneration;
-  if (!g?.available) return "近期同设置加权：暂无有效样本";
+  const history = displayedHistory(status);
+  const g = history.recent;
+  const label = history.partial ? "近期已测同设置加权" : "近期完整同设置加权";
+  if (!g?.available) return `${label}：暂无有效样本`;
   const c = g.context || {};
-  return `近期同设置加权：≈${g.tps.toFixed(1)} tok/s（最近 ${g.measuredTurns} 个有效轮次；本会话同设置已排除 ${g.excludedTurns} 轮；${c.model || "模型未知"} / ${c.provider || "提供方未记录"} / ${c.reasoningEffort || "推理设置未知"}）`;
+  return `${label}：≈${g.tps.toFixed(1)} tok/s（最近 ${g.measuredTurns} 个${history.partial ? "部分" : "完整"}计时轮次；本会话同设置已排除 ${g.excludedTurns} 轮；覆盖 ${coverageLabel(g.measuredOutputTokenFraction)}${g.stale ? "；旧样本" : ""}；${c.model || "模型未知"} / ${c.provider || "提供方未记录"} / ${c.reasoningEffort || "推理设置未知"}）`;
 }
 
 export function formatStatusDetails(status) {
   const line = formatStatusLine(status);
   if (!line) return null;
   const g = status.latest.generation;
-  const coverage = g?.measurementVersion === 3 ? `计时覆盖：${g.measuredResponses}/${g.ordinaryResponses} 次普通响应 · 输出 token 覆盖 ${((g.measuredOutputTokenFraction ?? 0) * 100).toFixed(1)}%` : "计时覆盖：暂无新版生成计时证据";
-  return [line, coverage, formatRecentGeneration(status)].join("\n");
+  const coverage = [3, 4].includes(g?.measurementVersion) ? `计时覆盖：${g.measuredResponses}/${g.ordinaryResponses} 次普通响应 · 输出 token 覆盖 ${((g.measuredOutputTokenFraction ?? 0) * 100).toFixed(1)}%` : "计时覆盖：暂无新版生成计时证据";
+  const reasons = Object.entries(g?.exclusionReasons || {}).map(([key, count]) => `${generationUnavailableLabel({ [key]: count })} ${count}次`).join("、");
+  const complete = [comparisonLabel("近期完整", status.recentGeneration), comparisonLabel("会话完整", status.sessionGeneration)].join(" · ");
+  const partial = [comparisonLabel("近期已测", status.recentPartialGeneration), comparisonLabel("会话已测", status.sessionPartialGeneration)].join(" · ");
+  return [line, coverage, formatRecentGeneration(status), complete, partial, ...(reasons ? [`排除原因：${reasons}`] : [])].join("\n");
 }
 
 export function formatStatusLine(status, options = {}) {
@@ -1283,14 +1345,16 @@ export function formatStatusLine(status, options = {}) {
   if (!options.verbose) {
     const g = status.latest.generation;
     const currentAvailable = g?.available && g.coverageComplete && typeof g.tps === "number" && Number.isFinite(g.tps);
+    const partialAvailable = g?.sampleAvailable && g.coverageType === "partial" && Number.isFinite(g.measuredTps);
     const reason = generationUnavailableLabel(status.latest.generation?.exclusionReasons);
-    const current = currentAvailable ? `本轮 ≈${g.tps.toFixed(1)} tok/s${g.shortOutput ? "（短输出）" : ""}` :
+    const current = currentAvailable ? `本轮 ≈${g.tps.toFixed(1)} tok/s${g.shortOutput ? "（短输出）" : ""}` : partialAvailable ?
+      `本轮已测 ≈${g.measuredTps.toFixed(1)} tok/s（覆盖${coverageLabel(g.measuredOutputTokenFraction)}${g.shortOutput ? "，短输出" : ""}）` :
       `本轮 暂不可测${reason ? `（${reason}）` : ""}`;
-    const comparison = (label, metric) => metric?.available && Number.isFinite(metric.tps) && metric.measuredTurns > 0 ?
-      `${label} ≈${metric.tps.toFixed(1)} tok/s（${metric.measuredTurns}轮）` : `${label} 暂无有效样本`;
-    return ["⚡ 生成 TPS 估计", current, comparison("近期", status.recentGeneration),
-      comparison("会话", status.sessionGeneration),
-      `输出 ${compactNumber(currentAvailable ? g.outputTokens : status.latest.outputTokens)} tok`].join(" · ");
+    const history = displayedHistory(status);
+    const suffix = history.partial ? "已测" : "完整";
+    const outputTokens = status.latest.outputTokens - (status.latest.responseMetrics?.scopes?.compaction?.outputTokens ?? 0);
+    return ["⚡ 生成 TPS 估计", current, comparisonLabel(`近期${suffix}`, history.recent),
+      comparisonLabel(`会话${suffix}`, history.session), `输出 ${compactNumber(outputTokens)} tok`].join(" · ");
   }
   const ttft = status.mostRecentTtft;
   const ttftSuffix = ttft

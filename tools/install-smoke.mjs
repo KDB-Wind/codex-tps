@@ -152,7 +152,7 @@ try {
 
   input.turn_id = "modern-turn";
   writeModernTurn(transcript, input.turn_id, input.session_id);
-  assert.match(hook(upgradedRoot, "collector", input).systemMessage, /本轮 ≈199\.0 tok\/s · 近期 ≈199\.0 tok\/s（1轮） · 会话 ≈199\.0 tok\/s（1轮） · 输出 200 tok$/);
+  assert.match(hook(upgradedRoot, "collector", input).systemMessage, /本轮 ≈199\.0 tok\/s · 近期完整 ≈199\.0 tok\/s（1轮） · 会话完整 ≈199\.0 tok\/s（1轮） · 输出 200 tok$/);
   status = query(upgradedRoot, input.session_id);
   assert.equal(status.latest.outputTokens, 500, "explicit and legacy mirrors must not double-count");
   assert.equal(status.latest.responseMetrics.scopes.compaction.outputTokens, 300);
@@ -160,13 +160,33 @@ try {
   assert.ok(fs.existsSync(path.join(upgradedRoot, "skills", "tps", "SKILL.md")), "optional query skill restored");
   assert.equal(status.latest.context.model, "gpt-synthetic");
 
+  input.turn_id = "partial-turn";
+  writeModernTurn(transcript, input.turn_id, input.session_id);
+  const partialNow = Date.now();
+  fs.appendFileSync(transcript, [
+    { type: "response_item", timestamp: new Date(partialNow - 500).toISOString(),
+      payload: { type: "custom_tool_call", id: "raw-unmeasured", call_id: "unmeasured" } },
+    { type: "token_usage_record", timestamp: new Date(partialNow - 400).toISOString(), payload: {
+      turn_id: input.turn_id, thread_id: input.session_id, response_id: "unmeasured-response",
+      usage: { output_tokens: 800, reasoning_output_tokens: 0 },
+    } },
+  ].map(r => JSON.stringify(r)).join("\n") + "\n");
+  assert.match(hook(upgradedRoot, "collector", input).systemMessage,
+    /本轮已测 ≈199\.0 tok\/s（覆盖20.0%） · 近期已测 ≈199\.0 tok\/s（1轮） · 会话已测 ≈199\.0 tok\/s（1轮） · 输出 1.0k tok$/);
+  status = query(upgradedRoot, input.session_id);
+  assert.equal(status.latest.generation.tps, null);
+  assert.equal(status.latest.generation.measuredTps, 199);
+  assert.equal(status.recentGeneration.measuredTurns, 1);
+  assert.equal(status.recentPartialGeneration.measuredTurns, 1);
+  assert.equal(status.latest.outputTokens, 1300);
+
   codex("plugin", "remove", "codex-tps-plus@kdb-wind");
   const freshRoot = install(version);
   assert.deepEqual(hook(freshRoot, "collector", {}), {});
   console.log(JSON.stringify({ ok: true, codex: codex("--version").trim(), version,
     checks: [`install-${baseVersion}`, "upgrade-to-candidate", "preserve-status", "completion-backfill",
       "repeated-stop", "removed-old-cache-fallback", "explicit-response-mirrors", "compaction-scope",
-      "matched-output-speed", "clean-candidate-install"],
+      "matched-output-speed", "partial-output-with-coverage", "separate-complete-partial-history", "clean-candidate-install"],
     modelRequests: 0 }));
 } finally {
   assert.equal(path.dirname(temporary), path.resolve(os.tmpdir()));

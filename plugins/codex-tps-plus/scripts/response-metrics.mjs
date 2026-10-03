@@ -3,7 +3,7 @@
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 const OUTPUT_KINDS = new Set(["Reasoning", "AgentMessage"]);
 const RAW_TOOLS = new Set(["function_call", "custom_tool_call", "local_shell_call", "mcp_tool_call", "web_search_call"]);
-const TOOL_ITEMS = new Set(["CommandExecution", "McpToolCall", "DynamicToolCall", "WebSearch", "Extension"]);
+const TOOL_ITEMS = new Set(["CommandExecution", "FileChange", "McpToolCall", "DynamicToolCall", "WebSearch", "Extension"]);
 
 function count(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -135,6 +135,21 @@ function outputWindow(state, startedAt, usageAt, responseUsage) {
 // wrapper calls can contain multiple native tool items with different IDs.
 function finalizeWindows(requests, tools, returns, startedAt) {
   const calls = requests.flatMap(entry => [...entry.window.calls.values()].map(call => ({ ...call, entry, returned: returns.get(call.id) })));
+  const validTool = t => !t.unsupported && typeof t.id === "string" && t.id && Number.isFinite(t.recordedAt) &&
+    Number.isSafeInteger(t.start) && Number.isSafeInteger(t.end) && t.start >= startedAt &&
+    t.end >= t.start && t.end <= t.recordedAt && t.end - t.start <= MAX_DURATION_MS && !t.conflict;
+  // A command may return a process handle before its native item completes.
+  // Its start must belong to exactly one identified call/return envelope.
+  // Completion time alone would incorrectly attach it to a later polling call.
+  const detached = new Map();
+  for (const tool of tools) {
+    if (tool.kind !== "CommandExecution" || tool.status !== "completed" || !validTool(tool)) continue;
+    const owners = calls.filter(call => Number.isFinite(call.returned) && call.returned >= call.entry.usageAt &&
+      tool.start >= call.at && tool.start <= call.returned);
+    if (owners.length === 1 && tool.end > owners[0].returned && tool.recordedAt > owners[0].returned) {
+      detached.set(tool, owners[0]);
+    }
+  }
   for (const entry of requests) {
     const window = entry.window;
     let associationFailed = false;
@@ -142,23 +157,25 @@ function finalizeWindows(requests, tools, returns, startedAt) {
       if (returns.has(call.id) && !Number.isFinite(call.returned)) associationFailed = true;
       let matched = tools.filter(t => t.id === call.id || t.id === call.itemId);
       if (!matched.length && Number.isFinite(call.returned) && call.returned >= entry.usageAt) {
-        // A native completion must lie inside a call/return envelope identified
-        // by call_id. Reject cross-response envelope ambiguity, not by order.
-        matched = tools.filter(t => t.recordedAt >= call.at && t.recordedAt <= call.returned);
+        // Blocking tools start and complete inside the identified envelope;
+        // detached commands have a separately verified start in that envelope.
+        matched = tools.filter(t => (t.start >= call.at && t.recordedAt >= call.at && t.recordedAt <= call.returned) ||
+          detached.get(t) === call);
         if (matched.some(t => calls.some(other => other.entry !== entry &&
-          Number.isFinite(other.returned) && t.recordedAt >= other.at && t.recordedAt <= other.returned))) {
+          Number.isFinite(other.returned) && t.start >= other.at && t.recordedAt >= other.at && t.recordedAt <= other.returned))) {
           associationFailed = true;
         }
       }
-      if (!matched.length || matched.some(t => t.unsupported || typeof t.id !== "string" || !t.id || !Number.isFinite(t.recordedAt) ||
-        !Number.isSafeInteger(t.start) || !Number.isSafeInteger(t.end) ||
-        t.start < startedAt || t.end < t.start || t.end > t.recordedAt || t.end - t.start > MAX_DURATION_MS || t.conflict)) associationFailed = true;
+      if (!matched.length || matched.some(t => !validTool(t))) associationFailed = true;
       else window.toolStart = Math.min(window.toolStart ?? Infinity, ...matched.map(t => t.start));
     }
     if (associationFailed) window.toolStart = null;
     entry.timing = outputWindow(window, startedAt, entry.usageAt, entry.usage);
     if (!entry.timing.reason && tools.some(t => Number.isSafeInteger(t.start) && Number.isSafeInteger(t.end) &&
-      t.start < entry.timing.end && t.end > entry.timing.start)) entry.timing = { reason: "tool_execution_overlaps_output" };
+      t.start < entry.timing.end && t.end > entry.timing.start &&
+      !(detached.has(t) && detached.get(t).entry !== entry && entry.timing.start >= detached.get(t).returned))) {
+      entry.timing = { reason: "tool_execution_overlaps_output" };
+    }
   }
 }
 
@@ -202,9 +219,9 @@ export function analyzeResponseMetrics(text, currentTurnId, options = {}) {
     if (p.thread_id) owner ??= p.thread_id;
     if (p.type === "item_completed" && p.item && !OUTPUT_KINDS.has(p.item.type) && !["UserMessage", "ContextCompaction"].includes(p.item.type)) {
       const tool = { id: p.item.id, kind: p.item.type, start: p.started_at_ms, end: p.completed_at_ms,
-        recordedAt: timestamp(r), unsupported: !TOOL_ITEMS.has(p.item.type) };
+        recordedAt: timestamp(r), status: p.item.status, unsupported: !TOOL_ITEMS.has(p.item.type) };
       const old = toolIds.get(tool.id);
-      if (old) { if (old.kind !== tool.kind || old.start !== tool.start || old.end !== tool.end) old.conflict = true; }
+      if (old) { if (old.kind !== tool.kind || old.start !== tool.start || old.end !== tool.end || old.status !== tool.status) old.conflict = true; }
       else { tools.push(tool); toolIds.set(tool.id, tool); }
     }
     if (r.type === "response_item" && ["function_call_output", "custom_tool_call_output", "local_shell_call_output", "mcp_tool_call_output"].includes(p.type) && typeof p.call_id === "string") {
@@ -300,7 +317,9 @@ export function analyzeResponseMetrics(text, currentTurnId, options = {}) {
   const durationMs = measured.reduce((n, x) => n + x.timing.durationMs, 0);
   const outputTokens = measured.reduce((n, x) => n + x.usage.output, 0);
   const intervalOutputTokens = measured.reduce((n, x) => n + x.usage.output - 1, 0);
-  const coverageComplete = available && ordinary.length > 0 && measured.length === ordinary.length &&
+  const sampleAvailable = available && !parseErrors && !overlaps && pending.firstKind === null &&
+    scopes.unclassified.responses === 0 && measured.length > 0 && durationMs > 0 && intervalOutputTokens > 0;
+  const coverageComplete = sampleAvailable && ordinary.length > 0 && measured.length === ordinary.length &&
     scopes.unclassified.responses === 0 && Object.keys(reasons).length === 0 && durationMs > 0;
   return {
     hasExplicitUsage: explicitEvents > 0, available, aborted,
@@ -308,11 +327,14 @@ export function analyzeResponseMetrics(text, currentTurnId, options = {}) {
     outputTokens: sum("output"), reasoningTokens: requests.every(x => x.usage.reasoning !== null) ? sum("reasoning") : null,
     usageSource: explicit.size > 0 ? requests.some(x => x.source === "legacy") ? "explicit_with_legacy_fallback" : "explicit_response_usage" : "legacy_token_count",
     responses: requests.length, duplicateResponses, mirroredLegacy, scopes, context,
-    generation: { available: coverageComplete, coverageComplete, source: "matched-client-output-windows",
-      measurementVersion: 3, formula: "sum(output_tokens - 1) / sum(output_window_seconds)",
+    generation: { available: coverageComplete, coverageComplete, sampleAvailable,
+      coverageType: coverageComplete ? "complete" : sampleAvailable ? "partial" : "unavailable",
+      source: "matched-client-output-windows",
+      measurementVersion: 4, formula: "sum(output_tokens - 1) / sum(output_window_seconds)",
       isPureGenerationTps: false, measuredResponses: measured.length, ordinaryResponses: ordinary.length,
       excludedResponses: requests.length - measured.length - scopes.compaction.responses,
       outputTokens, intervalOutputTokens, durationMs, tps: coverageComplete ? intervalOutputTokens / (durationMs / 1000) : null,
+      measuredTps: sampleAvailable ? intervalOutputTokens / (durationMs / 1000) : null,
       measuredOutputTokenFraction: scopes.ordinary.outputTokens > 0 ? outputTokens / scopes.ordinary.outputTokens : 0,
       shortOutput: measured.length > 0 && outputTokens / measured.length < 128, exclusionReasons: reasons },
   };

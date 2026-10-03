@@ -1,6 +1,6 @@
 {
   "name": "codex-tps-plus",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Local automatic generation TPS estimates with optional query skills; hooks never call a model.",
   "author": {
     "name": "KDB-Wind",
@@ -20,13 +20,15 @@
   "interface": {
     "displayName": "Codex TPS",
     "shortDescription": "Local generation TPS estimates with no model requests.",
-    "longDescription": "Runs local Stop hooks without model requests. Shows a generation TPS estimate only with complete matched evidence; unavailable timing stays unavailable. Optional tps and tps-doctor skills provide convenient queries.",
+    "longDescription": "Runs local Stop hooks without model requests. Shows complete generation TPS or a measured subset with explicit coverage. Complete and partial histories remain separate. Optional tps and tps-doctor skills provide convenient queries.",
     "developerName": "KDB-Wind",
     "category": "Productivity",
     "capabilities": [
       "Analyze",
       "Monitor"
     ],
-    "defaultPrompt": ["Show the latest generation TPS estimate or explain why timing is unavailable."]
+    "defaultPrompt": [
+      "Show the latest generation TPS estimate or explain why timing is unavailable."
+    ]
   }
 }
